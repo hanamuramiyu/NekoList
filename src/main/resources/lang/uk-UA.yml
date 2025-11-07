@@ -1,0 +1,35 @@
+no-permission: "&cУ вас немає дозволу на використання цієї команди."
+whitelist-enabled: "&aБілий список увімкнено."
+whitelist-disabled: "&cБілий список вимкнено."
+whitelist-on-join: "&cСервер використовує білий список."
+not-whitelisted: "&cВас немає в білому списку сервера."
+player-added: "&aГравець %player% доданий до білого списку."
+player-removed: "&cГравець %player% видалений з білого списку."
+player-not-found: "&cГравця %player% не знайдено."
+player-already-whitelisted: "&cГравець %player% вже є в білому списку."
+player-not-whitelisted: "&cГравця %player% немає в білому списку."
+reload-success: "&aКонфігурацію перезавантажено."
+whitelist-empty: "&eБілий список порожній."
+whitelist-list: "&aГравці в білому списку: &e%players%"
+usage: |
+  &6Команди NekoList:
+  &e/nekolist help &7- Показати довідку
+  &e/nekolist on &7- Увімкнути білий список
+  &e/nekolist off &7- Вимкнути білий список
+  &e/nekolist list &7- Показати гравців у білому списку
+  &e/nekolist add <гравець> &7- Додати гравця до білого списку
+  &e/nekolist remove <гравець> &7- Видалити гравця з білого списку
+  &e/nekolist reload &7- Перезавантажити конфігурацію
+
+discord:
+  ping: "Понг!"
+  pong: "Понг: %d мс"
+  whitelist-usage: "Будь ласка, використовуйте підкоманди: add, remove, list, status"
+  ping-description: "Перевірити затримку бота"
+  whitelist-description: "Керування білим списком сервера Minecraft"
+  add-description: "Додати гравця до білого списку"
+  remove-description: "Видалити гравця з білого списку"
+  list-description: "Показати гравців у білому списку"
+  status-description: "Перевірити статус білого списку"
+  player-option-description: "Ім'я гравця"
+  no-permission: "У вас немає дозволу на використання цієї команди."

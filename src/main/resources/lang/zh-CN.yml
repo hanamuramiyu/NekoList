@@ -1,0 +1,35 @@
+no-permission: "&c您没有使用此命令的权限。"
+whitelist-enabled: "&a白名单已启用。"
+whitelist-disabled: "&c白名单已禁用。"
+whitelist-on-join: "&c服务器已启用白名单。"
+not-whitelisted: "&c您不在服务器的白名单中。"
+player-added: "&a玩家 %player% 已被添加到白名单。"
+player-removed: "&c玩家 %player% 已被从白名单移除。"
+player-not-found: "&c玩家 %player% 未找到。"
+player-already-whitelisted: "&c玩家 %player% 已在白名单中。"
+player-not-whitelisted: "&c玩家 %player% 不在白名单中。"
+reload-success: "&a配置重载成功。"
+whitelist-empty: "&e白名单为空。"
+whitelist-list: "&a白名单玩家: &e%players%"
+usage: |
+  &6NekoList 命令:
+  &e/nekolist help &7- 显示此帮助
+  &e/nekolist on &7- 启用白名单
+  &e/nekolist off &7- 禁用白名单
+  &e/nekolist list &7- 显示白名单玩家
+  &e/nekolist add <玩家> &7- 添加玩家到白名单
+  &e/nekolist remove <玩家> &7- 从白名单移除玩家
+  &e/nekolist reload &7- 重载配置
+
+discord:
+  ping: "乓！"
+  pong: "乓: %d 毫秒"
+  whitelist-usage: "请使用子命令: add, remove, list, status"
+  ping-description: "检查机器人延迟"
+  whitelist-description: "管理Minecraft服务器白名单"
+  add-description: "添加玩家到白名单"
+  remove-description: "从白名单移除玩家"
+  list-description: "列出白名单玩家"
+  status-description: "检查白名单状态"
+  player-option-description: "玩家名称"
+  no-permission: "您没有使用此命令的权限。"

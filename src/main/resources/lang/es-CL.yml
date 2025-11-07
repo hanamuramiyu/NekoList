@@ -1,0 +1,35 @@
+no-permission: "&cNo tienes permiso para usar este comando."
+whitelist-enabled: "&aLa lista blanca ha sido activada."
+whitelist-disabled: "&cLa lista blanca ha sido desactivada."
+whitelist-on-join: "&cEl servidor tiene lista blanca activa."
+not-whitelisted: "&cNo estás en la lista blanca del servidor."
+player-added: "&aJugador %player% ha sido añadido a la lista blanca."
+player-removed: "&cJugador %player% ha sido removido de la lista blanca."
+player-not-found: "&cJugador %player% no encontrado."
+player-already-whitelisted: "&cJugador %player% ya está en la lista blanca."
+player-not-whitelisted: "&cJugador %player% no está en la lista blanca."
+reload-success: "&aConfiguración recargada exitosamente."
+whitelist-empty: "&eLa lista blanca está vacía."
+whitelist-list: "&aJugadores en lista blanca: &e%players%"
+usage: |
+  &6Comandos de NekoList:
+  &e/nekolist help &7- Mostrar esta ayuda
+  &e/nekolist on &7- Activar lista blanca
+  &e/nekolist off &7- Desactivar lista blanca
+  &e/nekolist list &7- Mostrar jugadores en lista blanca
+  &e/nekolist add <jugador> &7- Añadir jugador a lista blanca
+  &e/nekolist remove <jugador> &7- Remover jugador de lista blanca
+  &e/nekolist reload &7- Recargar configuración
+
+discord:
+  ping: "¡Pong!"
+  pong: "Pong: %d ms"
+  whitelist-usage: "Por favor usa un subcomando: add, remove, list, status"
+  ping-description: "Verificar latencia del bot"
+  whitelist-description: "Gestionar lista blanca del servidor Minecraft"
+  add-description: "Agregar jugador a la lista blanca"
+  remove-description: "Remover jugador de la lista blanca"
+  list-description: "Listar jugadores en lista blanca"
+  status-description: "Verificar estado de lista blanca"
+  player-option-description: "Nombre del jugador"
+  no-permission: "No tienes permiso para usar este comando."

@@ -1,0 +1,35 @@
+no-permission: "&cこのコマンドを使用する権限がありません。"
+whitelist-enabled: "&aホワイトリストが有効になりました。"
+whitelist-disabled: "&cホワイトリストが無効になりました。"
+whitelist-on-join: "&cサーバーはホワイトリスト制限中です。"
+not-whitelisted: "&cあなたはこのサーバーのホワイトリストに登録されていません。"
+player-added: "&aプレイヤー %player% をホワイトリストに追加しました。"
+player-removed: "&cプレイヤー %player% をホワイトリストから削除しました。"
+player-not-found: "&cプレイヤー %player% が見つかりません。"
+player-already-whitelisted: "&cプレイヤー %player% は既にホワイトリストに登録されています。"
+player-not-whitelisted: "&cプレイヤー %player% はホワイトリストに登録されていません。"
+reload-success: "&a設定を再読み込みしました。"
+whitelist-empty: "&eホワイトリストは空です。"
+whitelist-list: "&aホワイトリスト登録プレイヤー: &e%players%"
+usage: |
+  &6NekoList コマンド:
+  &e/nekolist help &7- このヘルプを表示
+  &e/nekolist on &7- ホワイトリストを有効化
+  &e/nekolist off &7- ホワイトリストを無効化
+  &e/nekolist list &7- ホワイトリスト登録プレイヤーを表示
+  &e/nekolist add <プレイヤー> &7- プレイヤーをホワイトリストに追加
+  &e/nekolist remove <プレイヤー> &7- プレイヤーをホワイトリストから削除
+  &e/nekolist reload &7- 設定を再読み込み
+
+discord:
+  ping: "ポン！"
+  pong: "ポン: %d ミリ秒"
+  whitelist-usage: "サブコマンドを使用してください: add, remove, list, status"
+  ping-description: "ボットの遅延を確認"
+  whitelist-description: "Minecraftサーバーのホワイトリストを管理"
+  add-description: "プレイヤーをホワイトリストに追加"
+  remove-description: "プレイヤーをホワイトリストから削除"
+  list-description: "ホワイトリスト登録プレイヤーを表示"
+  status-description: "ホワイトリストの状態を確認"
+  player-option-description: "プレイヤー名"
+  no-permission: "このコマンドを使用する権限がありません。"

@@ -1,0 +1,35 @@
+no-permission: "&cYou don't have permission to use this command."
+whitelist-enabled: "&aWhitelist has been enabled."
+whitelist-disabled: "&cWhitelist has been disabled."
+whitelist-on-join: "&cThe server is whitelisted."
+not-whitelisted: "&cYou are not whitelisted on this server."
+player-added: "&aPlayer %player% has been added to whitelist."
+player-removed: "&cPlayer %player% has been removed from whitelist."
+player-not-found: "&cPlayer %player% not found."
+player-already-whitelisted: "&cPlayer %player% is already whitelisted."
+player-not-whitelisted: "&cPlayer %player% is not whitelisted."
+reload-success: "&aConfiguration reloaded successfully."
+whitelist-empty: "&eWhitelist is empty."
+whitelist-list: "&aWhitelisted players: &e%players%"
+usage: |
+  &6NekoList Commands:
+  &e/nekolist help &7- Show this help
+  &e/nekolist on &7- Enable whitelist
+  &e/nekolist off &7- Disable whitelist
+  &e/nekolist list &7- Show whitelisted players
+  &e/nekolist add <player> &7- Add player to whitelist
+  &e/nekolist remove <player> &7- Remove player from whitelist
+  &e/nekolist reload &7- Reload configuration
+
+discord:
+  ping: "Pong!"
+  pong: "Pong: %d ms"
+  whitelist-usage: "Please use a subcommand: add, remove, list, status"
+  ping-description: "Check bot latency"
+  whitelist-description: "Manage Minecraft server whitelist"
+  add-description: "Add player to whitelist"
+  remove-description: "Remove player from whitelist"
+  list-description: "List whitelisted players"
+  status-description: "Check whitelist status"
+  player-option-description: "Player name"
+  no-permission: "You don't have permission to use this command."
