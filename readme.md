@@ -13,7 +13,13 @@ A powerful whitelist management system for Minecraft servers with Discord integr
 
 ## ✨ Features
 
-### 🎮 In-Game Commands
+### 🎮 Multi-Platform Support
+- **Bukkit & Forks** - Full compatibility with Spigot, Paper, Purpur, and other Bukkit-based servers
+- **Velocity Proxy** - Complete support for Velocity proxy networks
+- **Cross-Platform** - Same configuration works on all supported platforms
+- **Automatic Detection** - Plugin automatically detects and adapts to your platform
+
+### 🎯 In-Game Commands
 - **Advanced Whitelist Control** - Replace the default whitelist with enhanced functionality
 - **Real-time Management** - Add/remove players without server restart
 - **Permission Support** - Works with LuckPerms and other permission plugins
@@ -37,13 +43,21 @@ A powerful whitelist management system for Minecraft servers with Discord integr
 
 ### Prerequisites
 - Java 21 or higher
-- Minecraft Server 1.21.x (Paper recommended)
+- Minecraft Server 1.21.x (Paper recommended) OR Velocity proxy
 - Gradle (for building)
 
 ### Installation
+
+#### For Bukkit/Spigot/Paper/Purpur Servers:
 1. Download the latest release from [Releases](https://github.com/hanamuramiyu/NekoList/releases)
 2. Place the jar file in your server's `plugins` folder
 3. Restart your server
+4. Configure the plugin in `plugins/NekoList/config.yml`
+
+#### For Velocity Proxy:
+1. Download the latest release from [Releases](https://github.com/hanamuramiyu/NekoList/releases)
+2. Place the jar file in your proxy's `plugins` folder
+3. Restart Velocity
 4. Configure the plugin in `plugins/NekoList/config.yml`
 
 ### Basic Configuration
@@ -59,7 +73,7 @@ discord-bot:
 
 ## 🎯 Usage
 
-### In-Game Commands
+### In-Game Commands (Bukkit/Velocity)
 ```
 /whitelist help - Show command help
 /whitelist on - Enable whitelist
@@ -101,7 +115,7 @@ cd NekoList
 # Build the plugin
 ./gradlew shadowJar
 
-# Output will be in build/libs/NekoList-1.0.0.jar
+# Output will be in build/libs/NekoList-1.1.0.jar
 ```
 
 ## ⚙️ Configuration

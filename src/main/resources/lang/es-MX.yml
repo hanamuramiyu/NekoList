@@ -13,13 +13,13 @@ whitelist-empty: "&eLa lista blanca está vacía."
 whitelist-list: "&aJugadores en lista blanca: &e%players%"
 usage: |
   &6Comandos de NekoList:
-  &e/nekolist help &7- Mostrar esta ayuda
-  &e/nekolist on &7- Activar lista blanca
-  &e/nekolist off &7- Desactivar lista blanca
-  &e/nekolist list &7- Mostrar jugadores en lista blanca
-  &e/nekolist add <jugador> &7- Agregar jugador a lista blanca
-  &e/nekolist remove <jugador> &7- Remover jugador de lista blanca
-  &e/nekolist reload &7- Recargar configuración
+  &e/whitelist help &7- Mostrar esta ayuda
+  &e/whitelist on &7- Activar lista blanca
+  &e/whitelist off &7- Desactivar lista blanca
+  &e/whitelist list &7- Mostrar jugadores en lista blanca
+  &e/whitelist add <jugador> &7- Agregar jugador a lista blanca
+  &e/whitelist remove <jugador> &7- Remover jugador de lista blanca
+  &e/whitelist reload &7- Recargar configuración
 
 discord:
   ping: "¡Pong!"

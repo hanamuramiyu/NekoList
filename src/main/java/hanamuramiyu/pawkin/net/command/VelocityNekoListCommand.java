@@ -1,35 +1,38 @@
-package hanamuramiyu.pawkin.net.command;
+package hanamuramiyu.pawkin.net.velocity.command;
 
-import hanamuramiyu.pawkin.net.NekoList;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
-import org.bukkit.entity.Player;
+import com.velocitypowered.api.command.CommandSource;
+import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.proxy.Player;
+import hanamuramiyu.pawkin.net.NekoListBase;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
-public class NekoListCommand implements CommandExecutor, TabCompleter {
+public class VelocityNekoListCommand implements SimpleCommand {
     
-    private final NekoList plugin;
+    private final NekoListBase plugin;
     
-    public NekoListCommand(NekoList plugin) {
+    public VelocityNekoListCommand(NekoListBase plugin) {
         this.plugin = plugin;
     }
     
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+    public void execute(Invocation invocation) {
+        CommandSource sender = invocation.source();
+        String[] args = invocation.arguments();
+        
         if (args.length == 0) {
             sendPrivateMessage(sender, "usage");
-            return true;
+            return;
         }
         
-        if (!sender.hasPermission("nekolist.use") && !sender.isOp()) {
+        if (!sender.hasPermission("nekolist.use")) {
             sendPrivateMessage(sender, "no-permission");
-            return true;
+            return;
         }
         
         switch (args[0].toLowerCase()) {
@@ -66,7 +69,7 @@ public class NekoListCommand implements CommandExecutor, TabCompleter {
             case "add":
                 if (args.length < 2) {
                     sendPrivateMessage(sender, "usage");
-                    return true;
+                    return;
                 }
                 String playerToAdd = args[1];
                 if (plugin.isPlayerWhitelisted(playerToAdd)) {
@@ -80,7 +83,7 @@ public class NekoListCommand implements CommandExecutor, TabCompleter {
             case "remove":
                 if (args.length < 2) {
                     sendPrivateMessage(sender, "usage");
-                    return true;
+                    return;
                 }
                 String playerToRemove = args[1];
                 if (!plugin.isPlayerWhitelisted(playerToRemove)) {
@@ -95,32 +98,39 @@ public class NekoListCommand implements CommandExecutor, TabCompleter {
                 sendPrivateMessage(sender, "usage");
                 break;
         }
-        
-        return true;
     }
     
     @Override
-    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+    public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
+        String[] args = invocation.arguments();
+        
         if (args.length == 1) {
-            return Arrays.asList("help", "reload", "on", "off", "list", "add", "remove");
+            return CompletableFuture.completedFuture(Arrays.asList("help", "reload", "on", "off", "list", "add", "remove"));
         }
-        if (args.length == 2 && (args[0].equalsIgnoreCase("add") || args[0].equalsIgnoreCase("remove"))) {
-            return new ArrayList<>();
-        }
-        return new ArrayList<>();
+        
+        return CompletableFuture.completedFuture(Arrays.asList());
     }
     
-    private void sendPrivateMessage(CommandSender sender, String path) {
-        String message = plugin.getMessage(path);
-        sender.sendMessage(message);
+    @Override
+    public boolean hasPermission(Invocation invocation) {
+        return invocation.source().hasPermission("nekolist.use");
     }
     
-    private void sendPrivateMessage(CommandSender sender, String path, String playerName) {
-        String message = plugin.getMessage(path).replace("%player%", playerName);
-        sender.sendMessage(message);
+    private void sendPrivateMessage(CommandSource sender, String path) {
+        String message = plugin.getMessage(path).replaceAll("&([0-9a-fk-or])", "§$1");
+        Component component = LegacyComponentSerializer.legacySection().deserialize(message);
+        sender.sendMessage(component);
     }
     
-    private void sendPrivateRawMessage(CommandSender sender, String message) {
-        sender.sendMessage(message);
+    private void sendPrivateMessage(CommandSource sender, String path, String playerName) {
+        String message = plugin.getMessage(path).replace("%player%", playerName).replaceAll("&([0-9a-fk-or])", "§$1");
+        Component component = LegacyComponentSerializer.legacySection().deserialize(message);
+        sender.sendMessage(component);
+    }
+    
+    private void sendPrivateRawMessage(CommandSource sender, String message) {
+        String formattedMessage = message.replaceAll("&([0-9a-fk-or])", "§$1");
+        Component component = LegacyComponentSerializer.legacySection().deserialize(formattedMessage);
+        sender.sendMessage(component);
     }
 }

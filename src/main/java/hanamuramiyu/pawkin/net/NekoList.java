@@ -14,19 +14,23 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 public class NekoList extends JavaPlugin implements Listener {
     
     private FileConfiguration config;
-    private FileConfiguration whitelistConfig;
     private FileConfiguration languageConfig;
     private File whitelistFile;
     private File languageFile;
     private DiscordBot discordBot;
+    private NekoListBase nekoListBase;
     
     @Override
     public void onEnable() {
+        getLogger().info("NekoList starting on Bukkit platform");
+        
         saveDefaultConfig();
         config = getConfig();
         
@@ -47,12 +51,28 @@ public class NekoList extends JavaPlugin implements Listener {
         }
         
         loadLanguageFile();
-        getCommand("nekolist").setExecutor(new NekoListCommand(this));
+        
+        getCommand("whitelist").setExecutor(new NekoListCommand(this));
         getServer().getPluginManager().registerEvents(this, this);
         
+        nekoListBase = new NekoListBase(this, getSLF4JLogger(), true);
+        
+        Map<String, Object> configMap = new HashMap<>();
+        for (String key : config.getKeys(true)) {
+            configMap.put(key, config.get(key));
+        }
+        nekoListBase.setConfig(configMap);
+        
+        Map<String, Object> langMap = new HashMap<>();
+        for (String key : languageConfig.getKeys(true)) {
+            langMap.put(key, languageConfig.get(key));
+        }
+        nekoListBase.setLanguageConfig(langMap);
+        
         boolean discordEnabled = config.getBoolean("discord-bot.enabled", false);
+        getLogger().info("Discord bot enabled in config: " + discordEnabled);
         if (discordEnabled) {
-            discordBot = new DiscordBot(this);
+            discordBot = new DiscordBot(nekoListBase);
             discordBot.startBot();
         } else {
             getLogger().info("Discord bot is disabled in config");
@@ -108,7 +128,6 @@ public class NekoList extends JavaPlugin implements Listener {
                 getLogger().warning("Could not create whitelist.yml");
             }
         }
-        whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
     }
     
     private void loadLanguageFile() {
@@ -122,19 +141,22 @@ public class NekoList extends JavaPlugin implements Listener {
         getLogger().info("Loaded language file: " + language + ".yml");
     }
     
-    public void saveWhitelistConfig() {
-        try {
-            whitelistConfig.save(whitelistFile);
-        } catch (Exception e) {
-            getLogger().severe("Could not save whitelist.yml");
-        }
-    }
-    
     public void reloadNekoListConfig() {
         reloadConfig();
         config = getConfig();
-        createWhitelistConfig();
         loadLanguageFile();
+        
+        Map<String, Object> configMap = new HashMap<>();
+        for (String key : config.getKeys(true)) {
+            configMap.put(key, config.get(key));
+        }
+        nekoListBase.setConfig(configMap);
+        
+        Map<String, Object> langMap = new HashMap<>();
+        for (String key : languageConfig.getKeys(true)) {
+            langMap.put(key, languageConfig.get(key));
+        }
+        nekoListBase.setLanguageConfig(langMap);
         
         if (discordBot != null) {
             discordBot.stopBot();
@@ -142,8 +164,9 @@ public class NekoList extends JavaPlugin implements Listener {
         }
         
         boolean discordEnabled = config.getBoolean("discord-bot.enabled", false);
+        getLogger().info("Discord bot enabled after reload: " + discordEnabled);
         if (discordEnabled) {
-            discordBot = new DiscordBot(this);
+            discordBot = new DiscordBot(nekoListBase);
             discordBot.startBot();
         }
         
@@ -151,33 +174,56 @@ public class NekoList extends JavaPlugin implements Listener {
     }
     
     public boolean isWhitelistEnabled() {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         return whitelistConfig.getBoolean("enabled", false);
     }
     
     public void setWhitelistEnabled(boolean enabled) {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         whitelistConfig.set("enabled", enabled);
-        saveWhitelistConfig();
+        try {
+            whitelistConfig.save(whitelistFile);
+        } catch (Exception e) {
+            getLogger().severe("Could not save whitelist.yml");
+        }
     }
     
     public Set<String> getWhitelistedPlayers() {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         if (whitelistConfig.getConfigurationSection("players") == null) {
             whitelistConfig.createSection("players");
+            try {
+                whitelistConfig.save(whitelistFile);
+            } catch (Exception e) {
+                getLogger().severe("Could not save whitelist.yml");
+            }
         }
         return whitelistConfig.getConfigurationSection("players").getKeys(false);
     }
     
     public boolean isPlayerWhitelisted(String playerName) {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         return whitelistConfig.contains("players." + playerName.toLowerCase());
     }
     
     public void addPlayerToWhitelist(String playerName) {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         whitelistConfig.set("players." + playerName.toLowerCase(), true);
-        saveWhitelistConfig();
+        try {
+            whitelistConfig.save(whitelistFile);
+        } catch (Exception e) {
+            getLogger().severe("Could not save whitelist.yml");
+        }
     }
     
     public void removePlayerFromWhitelist(String playerName) {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         whitelistConfig.set("players." + playerName.toLowerCase(), null);
-        saveWhitelistConfig();
+        try {
+            whitelistConfig.save(whitelistFile);
+        } catch (Exception e) {
+            getLogger().severe("Could not save whitelist.yml");
+        }
     }
     
     public String getMessage(String path) {

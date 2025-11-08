@@ -13,13 +13,13 @@ whitelist-empty: "&e白名單是空的。"
 whitelist-list: "&a白名單玩家: &e%players%"
 usage: |
   &6NekoList 指令:
-  &e/nekolist help &7- 顯示此說明
-  &e/nekolist on &7- 啟用白名單
-  &e/nekolist off &7- 停用白名單
-  &e/nekolist list &7- 顯示白名單玩家
-  &e/nekolist add <玩家> &7- 將玩家加入白名單
-  &e/nekolist remove <玩家> &7- 從白名單移除玩家
-  &e/nekolist reload &7- 重新載入設定
+  &e/whitelist help &7- 顯示此說明
+  &e/whitelist on &7- 啟用白名單
+  &e/whitelist off &7- 停用白名單
+  &e/whitelist list &7- 顯示白名單玩家
+  &e/whitelist add <玩家> &7- 將玩家加入白名單
+  &e/whitelist remove <玩家> &7- 從白名單移除玩家
+  &e/whitelist reload &7- 重新載入設定
 
 discord:
   ping: "乓！"

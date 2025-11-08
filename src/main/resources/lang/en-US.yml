@@ -13,13 +13,13 @@ whitelist-empty: "&eWhitelist is empty."
 whitelist-list: "&aWhitelisted players: &e%players%"
 usage: |
   &6NekoList Commands:
-  &e/nekolist help &7- Show this help
-  &e/nekolist on &7- Enable whitelist
-  &e/nekolist off &7- Disable whitelist
-  &e/nekolist list &7- Show whitelisted players
-  &e/nekolist add <player> &7- Add player to whitelist
-  &e/nekolist remove <player> &7- Remove player from whitelist
-  &e/nekolist reload &7- Reload configuration
+  &e/whitelist help &7- Show this help
+  &e/whitelist on &7- Enable whitelist
+  &e/whitelist off &7- Disable whitelist
+  &e/whitelist list &7- Show whitelisted players
+  &e/whitelist add <player> &7- Add player to whitelist
+  &e/whitelist remove <player> &7- Remove player from whitelist
+  &e/whitelist reload &7- Reload configuration
 
 discord:
   ping: "Pong!"

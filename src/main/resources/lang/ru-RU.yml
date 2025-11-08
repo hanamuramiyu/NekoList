@@ -13,13 +13,13 @@ whitelist-empty: "&eБелый список пуст."
 whitelist-list: "&aИгроки в белом списке: &e%players%"
 usage: |
   &6Команды NekoList:
-  &e/nekolist help &7- Показать справку
-  &e/nekolist on &7- Включить белый список
-  &e/nekolist off &7- Выключить белый список
-  &e/nekolist list &7- Показать игроков в белом списке
-  &e/nekolist add <игрок> &7- Добавить игрока в белый список
-  &e/nekolist remove <игрок> &7- Удалить игрока из белого списка
-  &e/nekolist reload &7- Перезагрузить конфигурацию
+  &e/whitelist help &7- Показать справку
+  &e/whitelist on &7- Включить белый список
+  &e/whitelist off &7- Выключить белый список
+  &e/whitelist list &7- Показать игроков в белом списке
+  &e/whitelist add <игрок> &7- Добавить игрока в белый список
+  &e/whitelist remove <игрок> &7- Удалить игрока из белого списка
+  &e/whitelist reload &7- Перезагрузить конфигурацию
 
 discord:
   ping: "Понг!"

@@ -1,11 +1,11 @@
 name: NekoList
-version: 1.0.0
+version: 1.1.0
 main: hanamuramiyu.pawkin.net.NekoList
 description: Advanced whitelist system
 author: Hanamura Miyu
 api-version: 1.21
 commands:
-  nekolist:
+  whitelist:
     description: Manage whitelist
-    usage: /nekolist <help|reload|on|off|list|add|remove>
-    aliases: [nl, whitelist]
+    usage: /whitelist <help|reload|on|off|list|add|remove>
+    aliases: [wl]

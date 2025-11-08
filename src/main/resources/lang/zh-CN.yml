@@ -13,13 +13,13 @@ whitelist-empty: "&e白名单为空。"
 whitelist-list: "&a白名单玩家: &e%players%"
 usage: |
   &6NekoList 命令:
-  &e/nekolist help &7- 显示此帮助
-  &e/nekolist on &7- 启用白名单
-  &e/nekolist off &7- 禁用白名单
-  &e/nekolist list &7- 显示白名单玩家
-  &e/nekolist add <玩家> &7- 添加玩家到白名单
-  &e/nekolist remove <玩家> &7- 从白名单移除玩家
-  &e/nekolist reload &7- 重载配置
+  &e/whitelist help &7- 显示此帮助
+  &e/whitelist on &7- 启用白名单
+  &e/whitelist off &7- 禁用白名单
+  &e/whitelist list &7- 显示白名单玩家
+  &e/whitelist add <玩家> &7- 添加玩家到白名单
+  &e/whitelist remove <玩家> &7- 从白名单移除玩家
+  &e/whitelist reload &7- 重载配置
 
 discord:
   ping: "乓！"
