@@ -93,18 +93,6 @@ discord-bot:
 /whitelist status - Check whitelist status
 ```
 
-## 📸 Screenshots
-
-### Minecraft In-Game
-<img src="images/{86E7033D-4AAC-482A-B4CE-9559FCB4085F}.png" width="400" alt="Minecraft Commands">
-
-*Whitelist management via in-game commands*
-
-### Discord Integration
-<img src="images/{BD6817F6-C223-47E3-929A-B693FE8898F5}.png" width="400" alt="Discord Commands">
-
-*Whitelist management via Discord slash commands*
-
 ## 🔧 Building from Source
 
 ```bash
