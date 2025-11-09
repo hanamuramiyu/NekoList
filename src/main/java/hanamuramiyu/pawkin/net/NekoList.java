@@ -14,9 +14,10 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 public class NekoList extends JavaPlugin implements Listener {
     
@@ -25,7 +26,8 @@ public class NekoList extends JavaPlugin implements Listener {
     private File whitelistFile;
     private File languageFile;
     private DiscordBot discordBot;
-    private NekoListBase nekoListBase;
+    private boolean whitelistEnabled;
+    private Set<String> whitelistedPlayers;
     
     @Override
     public void onEnable() {
@@ -36,6 +38,7 @@ public class NekoList extends JavaPlugin implements Listener {
         
         createLangFiles();
         createWhitelistConfig();
+        loadWhitelist();
         
         if (!validateLanguageFile()) {
             getLogger().severe("================================================");
@@ -55,24 +58,15 @@ public class NekoList extends JavaPlugin implements Listener {
         getCommand("whitelist").setExecutor(new NekoListCommand(this));
         getServer().getPluginManager().registerEvents(this, this);
         
-        nekoListBase = new NekoListBase(this, getSLF4JLogger(), true);
-        
-        Map<String, Object> configMap = new HashMap<>();
-        for (String key : config.getKeys(true)) {
-            configMap.put(key, config.get(key));
-        }
-        nekoListBase.setConfig(configMap);
-        
-        Map<String, Object> langMap = new HashMap<>();
-        for (String key : languageConfig.getKeys(true)) {
-            langMap.put(key, languageConfig.get(key));
-        }
-        nekoListBase.setLanguageConfig(langMap);
-        
         boolean discordEnabled = config.getBoolean("discord-bot.enabled", false);
         getLogger().info("Discord bot enabled in config: " + discordEnabled);
         if (discordEnabled) {
-            discordBot = new DiscordBot(nekoListBase);
+            Map<String, Object> configMap = new HashMap<>();
+            for (String key : config.getKeys(true)) {
+                configMap.put(key, config.get(key));
+            }
+            
+            discordBot = new DiscordBot(this, configMap);
             discordBot.startBot();
         } else {
             getLogger().info("Discord bot is disabled in config");
@@ -86,6 +80,33 @@ public class NekoList extends JavaPlugin implements Listener {
         if (discordBot != null) {
             discordBot.stopBot();
         }
+    }
+    
+    public void reloadNekoListConfig() {
+        reloadConfig();
+        config = getConfig();
+        loadLanguageFile();
+        loadWhitelist();
+        
+        if (discordBot != null) {
+            discordBot.stopBot();
+            discordBot = null;
+        }
+        
+        boolean discordEnabled = config.getBoolean("discord-bot.enabled", false);
+        getLogger().info("Discord bot enabled after reload: " + discordEnabled);
+        if (discordEnabled) {
+            Map<String, Object> configMap = new HashMap<>();
+            for (String key : config.getKeys(true)) {
+                configMap.put(key, config.get(key));
+            }
+            
+            discordBot = new DiscordBot(this, configMap);
+            discordBot.startBot();
+            getLogger().info("Discord bot reloaded successfully for language: " + config.getString("language"));
+        }
+        
+        getLogger().info("Reloaded configuration with language: " + config.getString("language"));
     }
     
     private void createLangFiles() {
@@ -141,44 +162,22 @@ public class NekoList extends JavaPlugin implements Listener {
         getLogger().info("Loaded language file: " + language + ".yml");
     }
     
-    public void reloadNekoListConfig() {
-        reloadConfig();
-        config = getConfig();
-        loadLanguageFile();
+    private void loadWhitelist() {
+        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
+        whitelistEnabled = whitelistConfig.getBoolean("enabled", false);
+        whitelistedPlayers = new HashSet<>();
         
-        Map<String, Object> configMap = new HashMap<>();
-        for (String key : config.getKeys(true)) {
-            configMap.put(key, config.get(key));
+        if (whitelistConfig.getConfigurationSection("players") != null) {
+            whitelistedPlayers.addAll(whitelistConfig.getConfigurationSection("players").getKeys(false));
         }
-        nekoListBase.setConfig(configMap);
-        
-        Map<String, Object> langMap = new HashMap<>();
-        for (String key : languageConfig.getKeys(true)) {
-            langMap.put(key, languageConfig.get(key));
-        }
-        nekoListBase.setLanguageConfig(langMap);
-        
-        if (discordBot != null) {
-            discordBot.stopBot();
-            discordBot = null;
-        }
-        
-        boolean discordEnabled = config.getBoolean("discord-bot.enabled", false);
-        getLogger().info("Discord bot enabled after reload: " + discordEnabled);
-        if (discordEnabled) {
-            discordBot = new DiscordBot(nekoListBase);
-            discordBot.startBot();
-        }
-        
-        getLogger().info("Reloaded configuration with language: " + config.getString("language"));
     }
     
     public boolean isWhitelistEnabled() {
-        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
-        return whitelistConfig.getBoolean("enabled", false);
+        return whitelistEnabled;
     }
     
     public void setWhitelistEnabled(boolean enabled) {
+        this.whitelistEnabled = enabled;
         FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
         whitelistConfig.set("enabled", enabled);
         try {
@@ -189,26 +188,18 @@ public class NekoList extends JavaPlugin implements Listener {
     }
     
     public Set<String> getWhitelistedPlayers() {
-        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
-        if (whitelistConfig.getConfigurationSection("players") == null) {
-            whitelistConfig.createSection("players");
-            try {
-                whitelistConfig.save(whitelistFile);
-            } catch (Exception e) {
-                getLogger().severe("Could not save whitelist.yml");
-            }
-        }
-        return whitelistConfig.getConfigurationSection("players").getKeys(false);
+        return new HashSet<>(whitelistedPlayers);
     }
     
     public boolean isPlayerWhitelisted(String playerName) {
-        FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
-        return whitelistConfig.contains("players." + playerName.toLowerCase());
+        return whitelistedPlayers.contains(playerName.toLowerCase());
     }
     
     public void addPlayerToWhitelist(String playerName) {
+        String lowerName = playerName.toLowerCase();
+        whitelistedPlayers.add(lowerName);
         FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
-        whitelistConfig.set("players." + playerName.toLowerCase(), true);
+        whitelistConfig.set("players." + lowerName, true);
         try {
             whitelistConfig.save(whitelistFile);
         } catch (Exception e) {
@@ -217,8 +208,10 @@ public class NekoList extends JavaPlugin implements Listener {
     }
     
     public void removePlayerFromWhitelist(String playerName) {
+        String lowerName = playerName.toLowerCase();
+        whitelistedPlayers.remove(lowerName);
         FileConfiguration whitelistConfig = YamlConfiguration.loadConfiguration(whitelistFile);
-        whitelistConfig.set("players." + playerName.toLowerCase(), null);
+        whitelistConfig.set("players." + lowerName, null);
         try {
             whitelistConfig.save(whitelistFile);
         } catch (Exception e) {
@@ -246,7 +239,7 @@ public class NekoList extends JavaPlugin implements Listener {
     
     @EventHandler
     public void onPlayerLogin(PlayerLoginEvent event) {
-        if (!isWhitelistEnabled()) return;
+        if (!whitelistEnabled) return;
         
         Player player = event.getPlayer();
         if (player.hasPermission("nekolist.bypass")) return;

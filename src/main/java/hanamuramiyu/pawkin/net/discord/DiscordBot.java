@@ -1,153 +1,217 @@
 package hanamuramiyu.pawkin.net.discord;
 
-import hanamuramiyu.pawkin.net.NekoListBase;
-import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.entities.Activity;
-import net.dv8tion.jda.api.requests.GatewayIntent;
-import net.dv8tion.jda.api.exceptions.InvalidTokenException;
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
+import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
 
 import java.util.List;
 import java.util.Map;
 
-public class DiscordBot {
+public class DiscordEventListener extends ListenerAdapter {
     
-    private final NekoListBase plugin;
-    private JDA jda;
-    private boolean enabled;
+    private final DiscordBot bot;
     
-    public DiscordBot(NekoListBase plugin) {
-        this.plugin = plugin;
-        Map<String, Object> config = plugin.getConfig();
-        if (config == null) {
-            this.enabled = false;
+    public DiscordEventListener(DiscordBot bot) {
+        this.bot = bot;
+    }
+    
+    @Override
+    public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
+        if (!hasPermission(event)) {
+            event.reply(getCleanMessage("discord.no-permission")).setEphemeral(true).queue();
             return;
         }
         
-        Object discordBotObj = config.get("discord-bot");
-        if (discordBotObj instanceof Map) {
-            Map<String, Object> discordConfig = (Map<String, Object>) discordBotObj;
-            Object enabledObj = discordConfig.get("enabled");
-            if (enabledObj instanceof Boolean) {
-                this.enabled = (Boolean) enabledObj;
-            } else {
-                this.enabled = false;
-            }
-        } else {
-            try {
-                Class<?> configSectionClass = Class.forName("org.bukkit.configuration.ConfigurationSection");
-                if (configSectionClass.isInstance(discordBotObj)) {
-                    Object enabledObj = configSectionClass.getMethod("getBoolean", String.class).invoke(discordBotObj, "enabled");
-                    if (enabledObj instanceof Boolean) {
-                        this.enabled = (Boolean) enabledObj;
-                    } else {
-                        this.enabled = false;
-                    }
-                } else {
-                    this.enabled = false;
+        switch (event.getName()) {
+            case "ping":
+                long time = System.currentTimeMillis();
+                event.reply(getCleanMessage("discord.ping")).setEphemeral(true)
+                    .flatMap(v ->
+                        event.getHook().editOriginalFormat(getCleanMessage("discord.pong"), System.currentTimeMillis() - time)
+                    ).queue();
+                break;
+                
+            case "whitelist":
+                if (event.getSubcommandName() == null) {
+                    event.reply(getCleanMessage("discord.whitelist-usage")).setEphemeral(true).queue();
+                    return;
                 }
-            } catch (Exception e) {
-                this.enabled = false;
-            }
+                
+                switch (event.getSubcommandName()) {
+                    case "add":
+                        String playerToAdd = event.getOption("player").getAsString();
+                        if (isPlayerWhitelisted(playerToAdd)) {
+                            event.reply(getCleanMessage("player-already-whitelisted").replace("%player%", playerToAdd)).setEphemeral(true).queue();
+                        } else {
+                            addPlayerToWhitelist(playerToAdd);
+                            event.reply(getCleanMessage("player-added").replace("%player%", playerToAdd)).setEphemeral(true).queue();
+                        }
+                        break;
+                        
+                    case "remove":
+                        String playerToRemove = event.getOption("player").getAsString();
+                        if (!isPlayerWhitelisted(playerToRemove)) {
+                            event.reply(getCleanMessage("player-not-whitelisted").replace("%player%", playerToRemove)).setEphemeral(true).queue();
+                        } else {
+                            removePlayerFromWhitelist(playerToRemove);
+                            event.reply(getCleanMessage("player-removed").replace("%player%", playerToRemove)).setEphemeral(true).queue();
+                        }
+                        break;
+                        
+                    case "list":
+                        var players = getWhitelistedPlayers();
+                        if (players.isEmpty()) {
+                            event.reply(getCleanMessage("whitelist-empty")).setEphemeral(true).queue();
+                        } else {
+                            String playerList = String.join(", ", players);
+                            event.reply(getCleanMessage("whitelist-list").replace("%players%", playerList)).setEphemeral(true).queue();
+                        }
+                        break;
+                        
+                    case "status":
+                        boolean enabled = isWhitelistEnabled();
+                        String statusMessage = enabled ? getCleanMessage("whitelist-enabled") : getCleanMessage("whitelist-disabled");
+                        event.reply(statusMessage).setEphemeral(true).queue();
+                        break;
+                }
+                break;
         }
     }
     
-    public void startBot() {
-        if (!enabled) {
-            return;
-        }
-        
-        Map<String, Object> config = plugin.getConfig();
-        if (config == null) {
-            return;
-        }
-        
-        Object discordBotObj = config.get("discord-bot");
-        if (discordBotObj == null) {
-            return;
-        }
-        
-        String token = null;
-        List<String> allowedRoles = null;
-        List<String> allowedUsers = null;
-        
-        if (discordBotObj instanceof Map) {
-            Map<String, Object> discordConfig = (Map<String, Object>) discordBotObj;
-            token = (String) discordConfig.get("token");
-            allowedRoles = (List<String>) discordConfig.get("allowed-roles");
-            allowedUsers = (List<String>) discordConfig.get("allowed-users");
-        } else {
-            try {
-                Class<?> configSectionClass = Class.forName("org.bukkit.configuration.ConfigurationSection");
-                if (configSectionClass.isInstance(discordBotObj)) {
-                    token = (String) configSectionClass.getMethod("getString", String.class).invoke(discordBotObj, "token");
-                    Object rolesObj = configSectionClass.getMethod("getStringList", String.class).invoke(discordBotObj, "allowed-roles");
-                    Object usersObj = configSectionClass.getMethod("getStringList", String.class).invoke(discordBotObj, "allowed-users");
-                    
-                    if (rolesObj instanceof List) {
-                        allowedRoles = (List<String>) rolesObj;
-                    }
-                    if (usersObj instanceof List) {
-                        allowedUsers = (List<String>) usersObj;
-                    }
-                }
-            } catch (Exception e) {
-                plugin.getLogger().warn("Failed to read discord-bot config values");
-            }
-        }
-        
-        if (token == null || token.equals("YOUR_BOT_TOKEN_HERE")) {
-            plugin.getLogger().warn("Discord bot token not set in config");
-            return;
-        }
-        
-        if ((allowedRoles == null || allowedRoles.isEmpty()) && (allowedUsers == null || allowedUsers.isEmpty())) {
-            plugin.getLogger().warn("Discord bot is enabled but no allowed roles or users are configured");
-            return;
-        }
-        
+    @SuppressWarnings("unchecked")
+    private boolean hasPermission(SlashCommandInteractionEvent event) {
         try {
-            DiscordEventListener eventListener = new DiscordEventListener(plugin);
-            jda = JDABuilder.createDefault(token)
-                .enableIntents(GatewayIntent.MESSAGE_CONTENT)
-                .setActivity(Activity.playing("Minecraft"))
-                .addEventListeners(eventListener)
-                .build();
-            
-            jda.awaitReady();
-            
-            jda.updateCommands().addCommands(eventListener.getSlashCommands()).queue();
-            
-            plugin.getLogger().info("Discord bot started successfully");
-            
-        } catch (InvalidTokenException e) {
-            plugin.getLogger().warn("Invalid Discord bot token provided");
-            jda = null;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            jda = null;
-        } catch (Exception e) {
-            plugin.getLogger().warn("Failed to start Discord bot: " + e.getMessage());
-            jda = null;
-        }
-    }
-    
-    public void stopBot() {
-        if (jda != null) {
-            try {
-                jda.shutdown();
-            } catch (Exception e) {
-                plugin.getLogger().warn("Error while stopping Discord bot");
+            Map<String, Object> config = bot.getPluginConfig();
+            if (config == null) {
+                return false;
             }
-            jda = null;
+            
+            List<String> allowedRoles = (List<String>) config.get("discord-bot.allowed-roles");
+            List<String> allowedUsers = (List<String>) config.get("discord-bot.allowed-users");
+            
+            if (allowedRoles == null) allowedRoles = java.util.Collections.emptyList();
+            if (allowedUsers == null) allowedUsers = java.util.Collections.emptyList();
+            
+            if (allowedRoles.isEmpty() && allowedUsers.isEmpty()) {
+                return false;
+            }
+            
+            String userId = event.getUser().getId();
+            
+            if (allowedUsers.contains(userId)) {
+                return true;
+            }
+            
+            if (event.getMember() != null && !allowedRoles.isEmpty()) {
+                for (net.dv8tion.jda.api.entities.Role role : event.getMember().getRoles()) {
+                    if (allowedRoles.contains(role.getId())) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        } catch (Exception e) {
+            return false;
         }
     }
     
-    public boolean isEnabled() {
-        return enabled && jda != null;
+    private String getCleanMessage(String path) {
+        String message = getMessage(path);
+        if (message.startsWith("Message not found:")) {
+            return getDefaultMessage(path);
+        }
+        return message.replaceAll("&[0-9a-fk-or]", "").replaceAll("§[0-9a-fk-or]", "");
     }
     
-    public JDA getJDA() {
-        return jda;
+    private String getMessage(String path) {
+        Object plugin = bot.getPlugin();
+        try {
+            Object result = plugin.getClass().getMethod("getMessage", String.class).invoke(plugin, path);
+            return result instanceof String ? (String) result : "Message not found: " + path;
+        } catch (Exception e) {
+            return "Message not found: " + path;
+        }
+    }
+    
+    private boolean isPlayerWhitelisted(String playerName) {
+        Object plugin = bot.getPlugin();
+        try {
+            Object result = plugin.getClass().getMethod("isPlayerWhitelisted", String.class).invoke(plugin, playerName);
+            return result instanceof Boolean ? (Boolean) result : false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    private void addPlayerToWhitelist(String playerName) {
+        Object plugin = bot.getPlugin();
+        try {
+            plugin.getClass().getMethod("addPlayerToWhitelist", String.class).invoke(plugin, playerName);
+        } catch (Exception e) {
+        }
+    }
+    
+    private void removePlayerFromWhitelist(String playerName) {
+        Object plugin = bot.getPlugin();
+        try {
+            plugin.getClass().getMethod("removePlayerFromWhitelist", String.class).invoke(plugin, playerName);
+        } catch (Exception e) {
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private java.util.Set<String> getWhitelistedPlayers() {
+        Object plugin = bot.getPlugin();
+        try {
+            Object result = plugin.getClass().getMethod("getWhitelistedPlayers").invoke(plugin);
+            return result instanceof java.util.Set ? (java.util.Set<String>) result : java.util.Collections.emptySet();
+        } catch (Exception e) {
+            return java.util.Collections.emptySet();
+        }
+    }
+    
+    private boolean isWhitelistEnabled() {
+        Object plugin = bot.getPlugin();
+        try {
+            Object result = plugin.getClass().getMethod("isWhitelistEnabled").invoke(plugin);
+            return result instanceof Boolean ? (Boolean) result : false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    private String getDefaultMessage(String path) {
+        switch (path) {
+            case "discord.ping-description": return "Check bot latency";
+            case "discord.whitelist-description": return "Manage server whitelist";
+            case "discord.add-description": return "Add player to whitelist";
+            case "discord.remove-description": return "Remove player from whitelist";
+            case "discord.list-description": return "List whitelisted players";
+            case "discord.status-description": return "Check whitelist status";
+            case "discord.player-option-description": return "Player username";
+            case "discord.ping": return "Pong!";
+            case "discord.pong": return "Ping: %dms";
+            case "discord.whitelist-usage": return "Use /whitelist add/remove/list/status";
+            case "discord.no-permission": return "You don't have permission to use this command";
+            default: return "Command executed";
+        }
+    }
+    
+    public SlashCommandData[] getSlashCommands() {
+        return new SlashCommandData[] {
+            Commands.slash("ping", getMessage("discord.ping-description")),
+            Commands.slash("whitelist", getMessage("discord.whitelist-description"))
+                .addSubcommands(
+                    new SubcommandData("add", getMessage("discord.add-description"))
+                        .addOption(net.dv8tion.jda.api.interactions.commands.OptionType.STRING, "player", getMessage("discord.player-option-description"), true),
+                    new SubcommandData("remove", getMessage("discord.remove-description"))
+                        .addOption(net.dv8tion.jda.api.interactions.commands.OptionType.STRING, "player", getMessage("discord.player-option-description"), true),
+                    new SubcommandData("list", getMessage("discord.list-description")),
+                    new SubcommandData("status", getMessage("discord.status-description"))
+                )
+        };
     }
 }

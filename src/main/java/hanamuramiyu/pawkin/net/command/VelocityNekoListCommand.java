@@ -2,22 +2,25 @@ package hanamuramiyu.pawkin.net.velocity.command;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
-import com.velocitypowered.api.proxy.Player;
-import hanamuramiyu.pawkin.net.NekoListBase;
+import hanamuramiyu.pawkin.net.velocity.VelocityNekoList;
+import hanamuramiyu.pawkin.net.velocity.WhitelistManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class VelocityNekoListCommand implements SimpleCommand {
     
-    private final NekoListBase plugin;
+    private final VelocityNekoList plugin;
+    private final WhitelistManager whitelistManager;
     
-    public VelocityNekoListCommand(NekoListBase plugin) {
+    public VelocityNekoListCommand(VelocityNekoList plugin, WhitelistManager whitelistManager) {
         this.plugin = plugin;
+        this.whitelistManager = whitelistManager;
     }
     
     @Override
@@ -46,22 +49,22 @@ public class VelocityNekoListCommand implements SimpleCommand {
                 break;
                 
             case "on":
-                plugin.setWhitelistEnabled(true);
+                whitelistManager.setWhitelistEnabled(true);
                 sendPrivateMessage(sender, "whitelist-enabled");
                 break;
                 
             case "off":
-                plugin.setWhitelistEnabled(false);
+                whitelistManager.setWhitelistEnabled(false);
                 sendPrivateMessage(sender, "whitelist-disabled");
                 break;
                 
             case "list":
-                Set<String> players = plugin.getWhitelistedPlayers();
+                Set<String> players = whitelistManager.getWhitelistedPlayers();
                 if (players.isEmpty()) {
                     sendPrivateMessage(sender, "whitelist-empty");
                 } else {
                     String playerList = String.join(", ", players);
-                    String message = plugin.getMessage("whitelist-list").replace("%players%", playerList);
+                    String message = getMessage("whitelist-list").replace("%players%", playerList);
                     sendPrivateRawMessage(sender, message);
                 }
                 break;
@@ -72,10 +75,10 @@ public class VelocityNekoListCommand implements SimpleCommand {
                     return;
                 }
                 String playerToAdd = args[1];
-                if (plugin.isPlayerWhitelisted(playerToAdd)) {
+                if (whitelistManager.isPlayerWhitelisted(playerToAdd)) {
                     sendPrivateMessage(sender, "player-already-whitelisted", playerToAdd);
                 } else {
-                    plugin.addPlayerToWhitelist(playerToAdd);
+                    whitelistManager.addPlayerToWhitelist(playerToAdd);
                     sendPrivateMessage(sender, "player-added", playerToAdd);
                 }
                 break;
@@ -86,10 +89,10 @@ public class VelocityNekoListCommand implements SimpleCommand {
                     return;
                 }
                 String playerToRemove = args[1];
-                if (!plugin.isPlayerWhitelisted(playerToRemove)) {
+                if (!whitelistManager.isPlayerWhitelisted(playerToRemove)) {
                     sendPrivateMessage(sender, "player-not-whitelisted", playerToRemove);
                 } else {
-                    plugin.removePlayerFromWhitelist(playerToRemove);
+                    whitelistManager.removePlayerFromWhitelist(playerToRemove);
                     sendPrivateMessage(sender, "player-removed", playerToRemove);
                 }
                 break;
@@ -116,21 +119,45 @@ public class VelocityNekoListCommand implements SimpleCommand {
         return invocation.source().hasPermission("nekolist.use");
     }
     
+    private String getMessage(String path) {
+        Map<String, Object> languageConfig = plugin.getLanguageConfig();
+        if (languageConfig == null) {
+            return "Message not found: " + path;
+        }
+        
+        String[] parts = path.split("\\.");
+        Map<String, Object> current = languageConfig;
+        
+        for (int i = 0; i < parts.length - 1; i++) {
+            Object next = current.get(parts[i]);
+            if (next instanceof Map) {
+                current = (Map<String, Object>) next;
+            } else {
+                return "Message not found: " + path;
+            }
+        }
+        
+        String message = (String) current.get(parts[parts.length - 1]);
+        if (message == null) {
+            return "Message not found: " + path;
+        }
+        return message.replace('&', '§');
+    }
+    
     private void sendPrivateMessage(CommandSource sender, String path) {
-        String message = plugin.getMessage(path).replaceAll("&([0-9a-fk-or])", "§$1");
+        String message = getMessage(path);
         Component component = LegacyComponentSerializer.legacySection().deserialize(message);
         sender.sendMessage(component);
     }
     
     private void sendPrivateMessage(CommandSource sender, String path, String playerName) {
-        String message = plugin.getMessage(path).replace("%player%", playerName).replaceAll("&([0-9a-fk-or])", "§$1");
+        String message = getMessage(path).replace("%player%", playerName);
         Component component = LegacyComponentSerializer.legacySection().deserialize(message);
         sender.sendMessage(component);
     }
     
     private void sendPrivateRawMessage(CommandSource sender, String message) {
-        String formattedMessage = message.replaceAll("&([0-9a-fk-or])", "§$1");
-        Component component = LegacyComponentSerializer.legacySection().deserialize(formattedMessage);
+        Component component = LegacyComponentSerializer.legacySection().deserialize(message);
         sender.sendMessage(component);
     }
 }
