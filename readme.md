@@ -13,6 +13,12 @@ A powerful whitelist management system for Minecraft servers with Discord integr
 
 ## ✨ Features
 
+### 🔐 Advanced Player Verification
+- **UUID-Based System** - Advanced player identification for licensed servers
+- **Nickname Change Protection** - Players stay whitelisted even after changing names
+- **Smart Fallback** - Checks UUID first, falls back to nickname for compatibility
+- **Mode Awareness** - Different behavior for licensed vs offline servers
+
 ### 🎮 Multi-Platform Support
 - **Bukkit & Forks** - Full compatibility with Spigot, Paper, Purpur, and other Bukkit-based servers
 - **Velocity Proxy** - Complete support for Velocity proxy networks
@@ -93,6 +99,19 @@ discord-bot:
 /whitelist status - Check whitelist status
 ```
 
+## 🔐 UUID System Explained
+
+### For Licensed Servers (online-mode=true)
+- **Automatic UUID Registration** - UUIDs are automatically saved when players join
+- **Nickname Change Protection** - Players remain whitelisted even after changing names
+- **Spoofing Prevention** - Protection against nickname impersonation
+- **Data Synchronization** - Real-time updates to player information
+
+### For Offline Servers (online-mode=false) 
+- **Classic Nickname System** - Traditional nickname-based verification
+- **Simple Management** - Easy to understand and manage
+- **Full Compatibility** - Works with all offline-mode servers
+
 ## 🔧 Building from Source
 
 ```bash
@@ -103,7 +122,7 @@ cd NekoList
 # Build the plugin
 ./gradlew shadowJar
 
-# Output will be in build/libs/NekoList-1.1.0.jar
+# Output will be in build/libs/NekoList-1.2.0.jar
 ```
 
 ## ⚙️ Configuration

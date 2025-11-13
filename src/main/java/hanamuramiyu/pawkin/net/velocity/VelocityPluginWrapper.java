@@ -1,28 +1,33 @@
 package hanamuramiyu.pawkin.net.velocity;
 
+import hanamuramiyu.pawkin.net.NekoListBase;
 import org.slf4j.Logger;
 
 import java.io.File;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
-public class VelocityPluginWrapper {
+public class VelocityPluginWrapper implements NekoListBase {
     private final File dataFolder;
     private final Map<String, Object> config;
     private final Map<String, Object> languageConfig;
     private final WhitelistManager whitelistManager;
     private final Logger logger;
+    private final boolean onlineMode;
     
     public VelocityPluginWrapper(File dataFolder, Map<String, Object> config, 
-                               Map<String, Object> languageConfig, WhitelistManager whitelistManager, Logger logger) {
+                               Map<String, Object> languageConfig, WhitelistManager whitelistManager, 
+                               Logger logger, boolean onlineMode) {
         this.dataFolder = dataFolder;
         this.config = config;
         this.languageConfig = languageConfig;
         this.whitelistManager = whitelistManager;
         this.logger = logger;
+        this.onlineMode = onlineMode;
     }
     
-    public Map<String, Object> getConfig() {
+    public Map<String, Object> getPluginConfig() {
         return config;
     }
     
@@ -67,12 +72,24 @@ public class VelocityPluginWrapper {
         return whitelistManager.isPlayerWhitelisted(playerName);
     }
     
+    public boolean isPlayerWhitelisted(UUID playerUUID) {
+        return whitelistManager.isPlayerWhitelisted(playerUUID);
+    }
+    
     public void addPlayerToWhitelist(String playerName) {
         whitelistManager.addPlayerToWhitelist(playerName);
     }
     
+    public void addPlayerToWhitelist(String playerName, UUID uuid) {
+        whitelistManager.addPlayerToWhitelist(playerName, uuid);
+    }
+    
     public void removePlayerFromWhitelist(String playerName) {
         whitelistManager.removePlayerFromWhitelist(playerName);
+    }
+    
+    public void updatePlayerData(String playerName, UUID uuid) {
+        whitelistManager.updatePlayerData(playerName, uuid);
     }
     
     public Set<String> getWhitelistedPlayers() {
@@ -81,5 +98,9 @@ public class VelocityPluginWrapper {
     
     public boolean isWhitelistEnabled() {
         return whitelistManager.isWhitelistEnabled();
+    }
+    
+    public boolean isOnlineMode() {
+        return onlineMode;
     }
 }

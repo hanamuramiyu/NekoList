@@ -23,7 +23,7 @@ import java.util.Map;
 @Plugin(
     id = "nekolist",
     name = "NekoList",
-    version = "1.1.1",
+    version = "1.2.0",
     description = "Advanced whitelist system",
     authors = {"Hanamura Miyu"}
 )
@@ -36,6 +36,7 @@ public class VelocityNekoList {
     private DiscordBot discordBot;
     private WhitelistManager whitelistManager;
     private File dataFolder;
+    private VelocityPluginWrapper pluginWrapper;
     
     @Inject
     public VelocityNekoList(ProxyServer server, Logger logger) {
@@ -52,6 +53,9 @@ public class VelocityNekoList {
             dataFolder.mkdirs();
         }
         
+        boolean onlineMode = server.getConfiguration().isOnlineMode();
+        logger.info("Server online-mode: " + onlineMode);
+        
         saveDefaultConfig(dataFolder);
         loadConfig(dataFolder);
         createLangFiles(dataFolder);
@@ -64,9 +68,10 @@ public class VelocityNekoList {
         
         loadLanguageFile(dataFolder);
         
-        this.whitelistManager = new WhitelistManager(dataFolder);
+        this.whitelistManager = new WhitelistManager(dataFolder, onlineMode);
+        this.pluginWrapper = new VelocityPluginWrapper(dataFolder, config, languageConfig, whitelistManager, logger, onlineMode);
         
-        VelocityNekoListCommand commandHandler = new VelocityNekoListCommand(this, whitelistManager);
+        VelocityNekoListCommand commandHandler = new VelocityNekoListCommand(pluginWrapper, whitelistManager);
         server.getCommandManager().register(
             server.getCommandManager().metaBuilder("whitelist")
                 .aliases("wl")
@@ -75,14 +80,21 @@ public class VelocityNekoList {
             commandHandler
         );
         
-        server.getEventManager().register(this, new VelocityPlayerListener(this, whitelistManager));
+        server.getEventManager().register(this, new VelocityPlayerListener(pluginWrapper, whitelistManager));
         
         boolean discordEnabled = getDiscordEnabled();
         if (discordEnabled) {
             try {
                 Map<String, Object> flatConfig = createFlatConfig(config);
-                discordBot = new DiscordBot(new VelocityPluginWrapper(dataFolder, config, languageConfig, whitelistManager, logger), flatConfig);
-                discordBot.startBot();
+                discordBot = new DiscordBot(pluginWrapper, flatConfig);
+                boolean started = discordBot.startBot();
+                if (!started) {
+                    logger.warn("Failed to start Discord bot on first attempt, retrying...");
+                    started = discordBot.startBot();
+                    if (!started) {
+                        logger.error("Failed to start Discord bot after second attempt. Check your bot token and configuration.");
+                    }
+                }
             } catch (Exception e) {
                 logger.error("Failed to start Discord bot: " + e.getMessage());
             }
@@ -116,8 +128,17 @@ public class VelocityNekoList {
         if (discordEnabled) {
             try {
                 Map<String, Object> flatConfig = createFlatConfig(config);
-                discordBot = new DiscordBot(new VelocityPluginWrapper(dataFolder, config, languageConfig, whitelistManager, logger), flatConfig);
-                discordBot.startBot();
+                boolean onlineMode = server.getConfiguration().isOnlineMode();
+                pluginWrapper = new VelocityPluginWrapper(dataFolder, config, languageConfig, whitelistManager, logger, onlineMode);
+                discordBot = new DiscordBot(pluginWrapper, flatConfig);
+                boolean started = discordBot.startBot();
+                if (!started) {
+                    logger.warn("Failed to start Discord bot on first attempt after reload, retrying...");
+                    started = discordBot.startBot();
+                    if (!started) {
+                        logger.error("Failed to start Discord bot after second attempt. Check your bot token and configuration.");
+                    }
+                }
                 logger.info("Discord bot reloaded successfully for language: " + config.get("language"));
             } catch (Exception e) {
                 logger.error("Failed to start Discord bot after reload: " + e.getMessage());
@@ -127,8 +148,12 @@ public class VelocityNekoList {
         logger.info("Reloaded configuration with language: " + config.get("language"));
     }
     
+    public String getMessage(String path) {
+        return pluginWrapper.getMessage(path);
+    }
+    
     private Map<String, Object> createFlatConfig(Map<String, Object> nestedConfig) {
-        Map<String, Object> flat = new java.util.HashMap<>();
+        Map<String, Object> flat = new HashMap<>();
         flattenConfig(nestedConfig, flat, "");
         return flat;
     }

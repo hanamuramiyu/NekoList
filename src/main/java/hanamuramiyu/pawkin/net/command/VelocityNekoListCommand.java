@@ -2,23 +2,22 @@ package hanamuramiyu.pawkin.net.velocity.command;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
-import hanamuramiyu.pawkin.net.velocity.VelocityNekoList;
+import hanamuramiyu.pawkin.net.NekoListBase;
 import hanamuramiyu.pawkin.net.velocity.WhitelistManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class VelocityNekoListCommand implements SimpleCommand {
     
-    private final VelocityNekoList plugin;
+    private final NekoListBase plugin;
     private final WhitelistManager whitelistManager;
     
-    public VelocityNekoListCommand(VelocityNekoList plugin, WhitelistManager whitelistManager) {
+    public VelocityNekoListCommand(NekoListBase plugin, WhitelistManager whitelistManager) {
         this.plugin = plugin;
         this.whitelistManager = whitelistManager;
     }
@@ -44,7 +43,6 @@ public class VelocityNekoListCommand implements SimpleCommand {
                 break;
                 
             case "reload":
-                plugin.reloadNekoListConfig();
                 sendPrivateMessage(sender, "reload-success");
                 break;
                 
@@ -120,28 +118,7 @@ public class VelocityNekoListCommand implements SimpleCommand {
     }
     
     private String getMessage(String path) {
-        Map<String, Object> languageConfig = plugin.getLanguageConfig();
-        if (languageConfig == null) {
-            return "Message not found: " + path;
-        }
-        
-        String[] parts = path.split("\\.");
-        Map<String, Object> current = languageConfig;
-        
-        for (int i = 0; i < parts.length - 1; i++) {
-            Object next = current.get(parts[i]);
-            if (next instanceof Map) {
-                current = (Map<String, Object>) next;
-            } else {
-                return "Message not found: " + path;
-            }
-        }
-        
-        String message = (String) current.get(parts[parts.length - 1]);
-        if (message == null) {
-            return "Message not found: " + path;
-        }
-        return message.replace('&', '§');
+        return plugin.getMessage(path);
     }
     
     private void sendPrivateMessage(CommandSource sender, String path) {

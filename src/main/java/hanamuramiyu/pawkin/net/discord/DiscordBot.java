@@ -1,217 +1,82 @@
 package hanamuramiyu.pawkin.net.discord;
 
-import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
-import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
-import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
+import hanamuramiyu.pawkin.net.NekoListBase;
+import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.requests.GatewayIntent;
+import net.dv8tion.jda.api.utils.MemberCachePolicy;
 
-import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public class DiscordEventListener extends ListenerAdapter {
+public class DiscordBot {
     
-    private final DiscordBot bot;
+    private final NekoListBase plugin;
+    private final Map<String, Object> config;
+    private JDA jda;
+    private boolean starting = false;
     
-    public DiscordEventListener(DiscordBot bot) {
-        this.bot = bot;
+    public DiscordBot(NekoListBase plugin, Map<String, Object> config) {
+        this.plugin = plugin;
+        this.config = config;
     }
     
-    @Override
-    public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
-        if (!hasPermission(event)) {
-            event.reply(getCleanMessage("discord.no-permission")).setEphemeral(true).queue();
-            return;
+    public boolean startBot() {
+        if (starting) {
+            return false;
         }
         
-        switch (event.getName()) {
-            case "ping":
-                long time = System.currentTimeMillis();
-                event.reply(getCleanMessage("discord.ping")).setEphemeral(true)
-                    .flatMap(v ->
-                        event.getHook().editOriginalFormat(getCleanMessage("discord.pong"), System.currentTimeMillis() - time)
-                    ).queue();
-                break;
-                
-            case "whitelist":
-                if (event.getSubcommandName() == null) {
-                    event.reply(getCleanMessage("discord.whitelist-usage")).setEphemeral(true).queue();
-                    return;
-                }
-                
-                switch (event.getSubcommandName()) {
-                    case "add":
-                        String playerToAdd = event.getOption("player").getAsString();
-                        if (isPlayerWhitelisted(playerToAdd)) {
-                            event.reply(getCleanMessage("player-already-whitelisted").replace("%player%", playerToAdd)).setEphemeral(true).queue();
-                        } else {
-                            addPlayerToWhitelist(playerToAdd);
-                            event.reply(getCleanMessage("player-added").replace("%player%", playerToAdd)).setEphemeral(true).queue();
-                        }
-                        break;
-                        
-                    case "remove":
-                        String playerToRemove = event.getOption("player").getAsString();
-                        if (!isPlayerWhitelisted(playerToRemove)) {
-                            event.reply(getCleanMessage("player-not-whitelisted").replace("%player%", playerToRemove)).setEphemeral(true).queue();
-                        } else {
-                            removePlayerFromWhitelist(playerToRemove);
-                            event.reply(getCleanMessage("player-removed").replace("%player%", playerToRemove)).setEphemeral(true).queue();
-                        }
-                        break;
-                        
-                    case "list":
-                        var players = getWhitelistedPlayers();
-                        if (players.isEmpty()) {
-                            event.reply(getCleanMessage("whitelist-empty")).setEphemeral(true).queue();
-                        } else {
-                            String playerList = String.join(", ", players);
-                            event.reply(getCleanMessage("whitelist-list").replace("%players%", playerList)).setEphemeral(true).queue();
-                        }
-                        break;
-                        
-                    case "status":
-                        boolean enabled = isWhitelistEnabled();
-                        String statusMessage = enabled ? getCleanMessage("whitelist-enabled") : getCleanMessage("whitelist-disabled");
-                        event.reply(statusMessage).setEphemeral(true).queue();
-                        break;
-                }
-                break;
-        }
-    }
-    
-    @SuppressWarnings("unchecked")
-    private boolean hasPermission(SlashCommandInteractionEvent event) {
+        starting = true;
         try {
-            Map<String, Object> config = bot.getPluginConfig();
-            if (config == null) {
+            String token = (String) config.get("discord-bot.token");
+            if (token == null || token.equals("YOUR_BOT_TOKEN_HERE")) {
+                getLogger().severe("Discord bot token not configured!");
+                starting = false;
                 return false;
             }
             
-            List<String> allowedRoles = (List<String>) config.get("discord-bot.allowed-roles");
-            List<String> allowedUsers = (List<String>) config.get("discord-bot.allowed-users");
+            jda = JDABuilder.createDefault(token)
+                .enableIntents(GatewayIntent.GUILD_MEMBERS, GatewayIntent.MESSAGE_CONTENT)
+                .setMemberCachePolicy(MemberCachePolicy.ALL)
+                .addEventListeners(new DiscordEventListener(plugin))
+                .build();
             
-            if (allowedRoles == null) allowedRoles = java.util.Collections.emptyList();
-            if (allowedUsers == null) allowedUsers = java.util.Collections.emptyList();
+            jda.awaitReady();
             
-            if (allowedRoles.isEmpty() && allowedUsers.isEmpty()) {
-                return false;
+            jda.updateCommands().addCommands(new DiscordEventListener(plugin).getSlashCommands()).queue();
+            
+            getLogger().info("Discord bot started successfully!");
+            starting = false;
+            return true;
+        } catch (Exception e) {
+            getLogger().severe("Failed to start Discord bot: " + e.getMessage());
+            starting = false;
+            return false;
+        }
+    }
+    
+    public void stopBot() {
+        if (jda != null) {
+            try {
+                jda.shutdown();
+                getLogger().info("Discord bot stopped");
+            } catch (Exception e) {
+                getLogger().severe("Error stopping Discord bot: " + e.getMessage());
             }
-            
-            String userId = event.getUser().getId();
-            
-            if (allowedUsers.contains(userId)) {
-                return true;
-            }
-            
-            if (event.getMember() != null && !allowedRoles.isEmpty()) {
-                for (net.dv8tion.jda.api.entities.Role role : event.getMember().getRoles()) {
-                    if (allowedRoles.contains(role.getId())) {
-                        return true;
-                    }
-                }
-            }
-            
-            return false;
-        } catch (Exception e) {
-            return false;
+            jda = null;
         }
     }
     
-    private String getCleanMessage(String path) {
-        String message = getMessage(path);
-        if (message.startsWith("Message not found:")) {
-            return getDefaultMessage(path);
-        }
-        return message.replaceAll("&[0-9a-fk-or]", "").replaceAll("§[0-9a-fk-or]", "");
+    public NekoListBase getPlugin() {
+        return plugin;
     }
     
-    private String getMessage(String path) {
-        Object plugin = bot.getPlugin();
-        try {
-            Object result = plugin.getClass().getMethod("getMessage", String.class).invoke(plugin, path);
-            return result instanceof String ? (String) result : "Message not found: " + path;
-        } catch (Exception e) {
-            return "Message not found: " + path;
-        }
+    public Map<String, Object> getPluginConfig() {
+        return config;
     }
     
-    private boolean isPlayerWhitelisted(String playerName) {
-        Object plugin = bot.getPlugin();
-        try {
-            Object result = plugin.getClass().getMethod("isPlayerWhitelisted", String.class).invoke(plugin, playerName);
-            return result instanceof Boolean ? (Boolean) result : false;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    private void addPlayerToWhitelist(String playerName) {
-        Object plugin = bot.getPlugin();
-        try {
-            plugin.getClass().getMethod("addPlayerToWhitelist", String.class).invoke(plugin, playerName);
-        } catch (Exception e) {
-        }
-    }
-    
-    private void removePlayerFromWhitelist(String playerName) {
-        Object plugin = bot.getPlugin();
-        try {
-            plugin.getClass().getMethod("removePlayerFromWhitelist", String.class).invoke(plugin, playerName);
-        } catch (Exception e) {
-        }
-    }
-    
-    @SuppressWarnings("unchecked")
-    private java.util.Set<String> getWhitelistedPlayers() {
-        Object plugin = bot.getPlugin();
-        try {
-            Object result = plugin.getClass().getMethod("getWhitelistedPlayers").invoke(plugin);
-            return result instanceof java.util.Set ? (java.util.Set<String>) result : java.util.Collections.emptySet();
-        } catch (Exception e) {
-            return java.util.Collections.emptySet();
-        }
-    }
-    
-    private boolean isWhitelistEnabled() {
-        Object plugin = bot.getPlugin();
-        try {
-            Object result = plugin.getClass().getMethod("isWhitelistEnabled").invoke(plugin);
-            return result instanceof Boolean ? (Boolean) result : false;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    private String getDefaultMessage(String path) {
-        switch (path) {
-            case "discord.ping-description": return "Check bot latency";
-            case "discord.whitelist-description": return "Manage server whitelist";
-            case "discord.add-description": return "Add player to whitelist";
-            case "discord.remove-description": return "Remove player from whitelist";
-            case "discord.list-description": return "List whitelisted players";
-            case "discord.status-description": return "Check whitelist status";
-            case "discord.player-option-description": return "Player username";
-            case "discord.ping": return "Pong!";
-            case "discord.pong": return "Ping: %dms";
-            case "discord.whitelist-usage": return "Use /whitelist add/remove/list/status";
-            case "discord.no-permission": return "You don't have permission to use this command";
-            default: return "Command executed";
-        }
-    }
-    
-    public SlashCommandData[] getSlashCommands() {
-        return new SlashCommandData[] {
-            Commands.slash("ping", getMessage("discord.ping-description")),
-            Commands.slash("whitelist", getMessage("discord.whitelist-description"))
-                .addSubcommands(
-                    new SubcommandData("add", getMessage("discord.add-description"))
-                        .addOption(net.dv8tion.jda.api.interactions.commands.OptionType.STRING, "player", getMessage("discord.player-option-description"), true),
-                    new SubcommandData("remove", getMessage("discord.remove-description"))
-                        .addOption(net.dv8tion.jda.api.interactions.commands.OptionType.STRING, "player", getMessage("discord.player-option-description"), true),
-                    new SubcommandData("list", getMessage("discord.list-description")),
-                    new SubcommandData("status", getMessage("discord.status-description"))
-                )
-        };
+    private Logger getLogger() {
+        return Logger.getLogger("NekoList");
     }
 }
