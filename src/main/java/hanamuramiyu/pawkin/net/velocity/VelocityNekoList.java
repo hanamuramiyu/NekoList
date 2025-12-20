@@ -23,7 +23,7 @@ import java.util.Map;
 @Plugin(
     id = "nekolist",
     name = "NekoList",
-    version = "1.2.0",
+    version = "1.2.1",
     description = "Advanced whitelist system",
     authors = {"Hanamura Miyu"}
 )
@@ -37,6 +37,7 @@ public class VelocityNekoList {
     private WhitelistManager whitelistManager;
     private File dataFolder;
     private VelocityPluginWrapper pluginWrapper;
+    private boolean onlineMode;
     
     @Inject
     public VelocityNekoList(ProxyServer server, Logger logger) {
@@ -53,7 +54,7 @@ public class VelocityNekoList {
             dataFolder.mkdirs();
         }
         
-        boolean onlineMode = server.getConfiguration().isOnlineMode();
+        this.onlineMode = server.getConfiguration().isOnlineMode();
         logger.info("Server online-mode: " + onlineMode);
         
         saveDefaultConfig(dataFolder);
@@ -71,16 +72,7 @@ public class VelocityNekoList {
         this.whitelistManager = new WhitelistManager(dataFolder, onlineMode);
         this.pluginWrapper = new VelocityPluginWrapper(dataFolder, config, languageConfig, whitelistManager, logger, onlineMode);
         
-        VelocityNekoListCommand commandHandler = new VelocityNekoListCommand(pluginWrapper, whitelistManager);
-        server.getCommandManager().register(
-            server.getCommandManager().metaBuilder("whitelist")
-                .aliases("wl")
-                .plugin(this)
-                .build(),
-            commandHandler
-        );
-        
-        server.getEventManager().register(this, new VelocityPlayerListener(pluginWrapper, whitelistManager));
+        registerCommandsAndListeners();
         
         boolean discordEnabled = getDiscordEnabled();
         if (discordEnabled) {
@@ -112,11 +104,25 @@ public class VelocityNekoList {
         }
     }
     
+    private void registerCommandsAndListeners() {
+        VelocityNekoListCommand commandHandler = new VelocityNekoListCommand(pluginWrapper, whitelistManager, this);
+        server.getCommandManager().register(
+            server.getCommandManager().metaBuilder("whitelist")
+                .aliases("wl")
+                .plugin(this)
+                .build(),
+            commandHandler
+        );
+        
+        server.getEventManager().register(this, new VelocityPlayerListener(pluginWrapper, whitelistManager));
+    }
+    
     public void reloadNekoListConfig() {
         logger.info("Reloading NekoList configuration...");
         
         loadConfig(dataFolder);
         loadLanguageFile(dataFolder);
+        
         whitelistManager.loadWhitelist();
         
         if (discordBot != null) {
@@ -128,7 +134,6 @@ public class VelocityNekoList {
         if (discordEnabled) {
             try {
                 Map<String, Object> flatConfig = createFlatConfig(config);
-                boolean onlineMode = server.getConfiguration().isOnlineMode();
                 pluginWrapper = new VelocityPluginWrapper(dataFolder, config, languageConfig, whitelistManager, logger, onlineMode);
                 discordBot = new DiscordBot(pluginWrapper, flatConfig);
                 boolean started = discordBot.startBot();
@@ -144,6 +149,12 @@ public class VelocityNekoList {
                 logger.error("Failed to start Discord bot after reload: " + e.getMessage());
             }
         }
+        
+        server.getCommandManager().unregister("whitelist");
+        server.getCommandManager().unregister("wl");
+        server.getEventManager().unregisterListeners(this);
+        
+        registerCommandsAndListeners();
         
         logger.info("Reloaded configuration with language: " + config.get("language"));
     }
@@ -226,7 +237,7 @@ public class VelocityNekoList {
     }
     
     private void createLangFiles(File dataFolder) {
-        String[] languages = {"en-US", "en-GB", "es-ES", "es-MX", "es-AR", "es-CL", "es-CO", "es-PE", "ja-JP", "ru-RU", "uk-UA", "zh-CN", "zh-TW"};
+        String[] languages = {"en-US", "en-GB", "es-ES", "es-419", "ja-JP", "ru-RU", "uk-UA", "zh-CN", "zh-TW"};
         File langDir = new File(dataFolder, "lang");
         if (!langDir.exists()) {
             langDir.mkdirs();

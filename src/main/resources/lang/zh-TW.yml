@@ -22,7 +22,7 @@ usage: |
   &e/whitelist reload &7- 重新載入設定
 
 discord:
-  ping: "乓！"
+  ping: "乒!"
   pong: "乓: %d 毫秒"
   whitelist-usage: "請使用子指令: add, remove, list, status"
   ping-description: "檢查機器人延遲"

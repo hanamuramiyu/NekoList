@@ -1,4 +1,4 @@
-no-permission: "&cNo tenés permiso para usar este comando."
+no-permission: "&cNo tienes permiso para usar este comando."
 whitelist-enabled: "&aLa lista blanca ha sido activada."
 whitelist-disabled: "&cLa lista blanca ha sido desactivada."
 whitelist-on-join: "&cEl servidor tiene lista blanca activa."
@@ -22,7 +22,7 @@ usage: |
   &e/whitelist reload &7- Recargar configuración
 
 discord:
-  ping: "¡Pong!"
+  ping: "¡Ping!"
   pong: "Pong: %d ms"
   whitelist-usage: "Por favor usa un subcomando: add, remove, list, status"
   ping-description: "Verificar latencia del bot"

@@ -22,7 +22,7 @@ usage: |
   &e/whitelist reload &7- Перезагрузить конфигурацию
 
 discord:
-  ping: "Понг!"
+  ping: "Пинг!"
   pong: "Понг: %d мс"
   whitelist-usage: "Пожалуйста, используйте подкоманды: add, remove, list, status"
   ping-description: "Проверить задержку бота"

@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "hanamuramiyu.pawkin"
-version = "1.2.0"
+version = "1.2.1"
 description = "NekoList"
 
 java {
@@ -21,12 +21,10 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
     compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
     annotationProcessor("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
-    compileOnly("net.luckperms:api:5.4")
     implementation("net.dv8tion:JDA:5.0.0-beta.20")
-    implementation("org.yaml:snakeyaml:2.2")
 }
 
 tasks {
@@ -34,7 +32,6 @@ tasks {
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
         from("src/main/resources") {
             include("**/*.yml")
-            include("**/*.yaml")
         }
     }
     
@@ -50,11 +47,6 @@ tasks {
     shadowJar {
         archiveFileName.set("${project.name}-${project.version}.jar")
         minimize()
-        
-        dependencies {
-            exclude(dependency("io.papermc.paper:paper-api:.*"))
-            exclude(dependency("com.velocitypowered:velocity-api:.*"))
-        }
     }
     
     build {

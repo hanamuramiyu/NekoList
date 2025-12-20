@@ -22,7 +22,7 @@ usage: |
   &e/whitelist reload &7- Reload configuration
 
 discord:
-  ping: "Pong!"
+  ping: "Ping!"
   pong: "Pong: %d ms"
   whitelist-usage: "Please use a subcommand: add, remove, list, status"
   ping-description: "Check bot latency"

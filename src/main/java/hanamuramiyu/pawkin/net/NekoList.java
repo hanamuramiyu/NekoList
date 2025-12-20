@@ -53,7 +53,7 @@ public class NekoList extends JavaPlugin implements Listener, NekoListBase {
             getLogger().severe("LANGUAGE FILE VALIDATION FAILED!");
             getLogger().severe("Configured language: " + bukkitConfig.getString("language", "en-US"));
             getLogger().severe("The specified language file does not exist in the lang folder.");
-            getLogger().severe("Available languages: en-US, en-GB, es-ES, es-MX, es-AR, es-CL, es-CO, es-PE, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW");
+            getLogger().severe("Available languages: en-US, en-GB, es-ES, es-419, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW");
             getLogger().severe("Please check your config.yml and ensure the language file exists.");
             getLogger().severe("Plugin will now disable.");
             getLogger().severe("================================================");
@@ -135,7 +135,7 @@ public class NekoList extends JavaPlugin implements Listener, NekoListBase {
     }
     
     private void createLangFiles() {
-        String[] languages = {"en-US", "en-GB", "es-ES", "es-MX", "es-AR", "es-CL", "es-CO", "es-PE", "ja-JP", "ru-RU", "uk-UA", "zh-CN", "zh-TW"};
+        String[] languages = {"en-US", "en-GB", "es-ES", "es-419", "ja-JP", "ru-RU", "uk-UA", "zh-CN", "zh-TW"};
         File langDir = new File(getDataFolder(), "lang");
         if (!langDir.exists()) {
             langDir.mkdirs();

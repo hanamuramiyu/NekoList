@@ -1,7 +1,7 @@
 # NekoList Configuration
 # Language settings
 language: "en-US"
-# Available languages: en-US, en-GB, es-ES, es-MX, es-AR, es-CL, es-CO, es-PE, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW
+# Available languages: en-US, en-GB, es-ES, es-419, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW
 
 # Discord Bot settings
 discord-bot:

@@ -4,6 +4,7 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import hanamuramiyu.pawkin.net.NekoListBase;
 import hanamuramiyu.pawkin.net.velocity.WhitelistManager;
+import hanamuramiyu.pawkin.net.velocity.VelocityNekoList;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
@@ -16,10 +17,12 @@ public class VelocityNekoListCommand implements SimpleCommand {
     
     private final NekoListBase plugin;
     private final WhitelistManager whitelistManager;
+    private final VelocityNekoList velocityPlugin;
     
-    public VelocityNekoListCommand(NekoListBase plugin, WhitelistManager whitelistManager) {
+    public VelocityNekoListCommand(NekoListBase plugin, WhitelistManager whitelistManager, VelocityNekoList velocityPlugin) {
         this.plugin = plugin;
         this.whitelistManager = whitelistManager;
+        this.velocityPlugin = velocityPlugin;
     }
     
     @Override
@@ -43,6 +46,7 @@ public class VelocityNekoListCommand implements SimpleCommand {
                 break;
                 
             case "reload":
+                velocityPlugin.reloadNekoListConfig();
                 sendPrivateMessage(sender, "reload-success");
                 break;
                 

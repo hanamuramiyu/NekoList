@@ -22,7 +22,7 @@ usage: |
   &e/whitelist reload &7- 設定を再読み込み
 
 discord:
-  ping: "ポン！"
+  ping: "ピング!"
   pong: "ポン: %d ミリ秒"
   whitelist-usage: "サブコマンドを使用してください: add, remove, list, status"
   ping-description: "ボットの遅延を確認"

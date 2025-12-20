@@ -132,20 +132,9 @@ public class WhitelistManager {
         saveWhitelistConfig(whitelistConfig);
     }
     
-    @SuppressWarnings("unchecked")
     public synchronized void setWhitelistEnabled(boolean enabled) {
         this.whitelistEnabled = enabled;
-        Yaml yaml = new Yaml();
-        try (FileReader reader = new FileReader(whitelistFile)) {
-            Map<String, Object> whitelistConfig = (Map<String, Object>) yaml.load(reader);
-            if (whitelistConfig == null) {
-                whitelistConfig = Collections.synchronizedMap(new HashMap<>());
-            }
-            whitelistConfig.put("enabled", enabled);
-            saveWhitelistConfig(whitelistConfig);
-        } catch (Exception e) {
-            logger.error("Could not set whitelist enabled: {}", e.getMessage());
-        }
+        saveWhitelist();
     }
     
     public boolean isWhitelistEnabled() {
@@ -163,7 +152,6 @@ public class WhitelistManager {
     public boolean isPlayerWhitelisted(String playerName) {
         String lowerName = playerName.toLowerCase();
         boolean found = whitelistedPlayers.containsKey(lowerName);
-        logger.info("Checking player '{}' -> '{}': {}", playerName, lowerName, found);
         return found;
     }
     

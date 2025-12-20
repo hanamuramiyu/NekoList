@@ -54,7 +54,9 @@ public class VelocityPluginWrapper implements NekoListBase {
         for (int i = 0; i < parts.length - 1; i++) {
             Object next = current.get(parts[i]);
             if (next instanceof Map) {
-                current = (Map<String, Object>) next;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> nextMap = (Map<String, Object>) next;
+                current = nextMap;
             } else {
                 return "Message not found: " + path;
             }
