@@ -1,39 +1,60 @@
 package hanamuramiyu.pawkin.net.discord;
 
-import hanamuramiyu.pawkin.net.NekoListBase;
+import hanamuramiyu.pawkin.net.core.NekoList;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.requests.GatewayIntent;
+import net.dv8tion.jda.api.utils.ChunkingFilter;
+import net.dv8tion.jda.api.utils.cache.CacheFlag;
+import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.events.session.ShutdownEvent;
+import net.dv8tion.jda.api.exceptions.InvalidTokenException;
 
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class DiscordBot extends ListenerAdapter {
-    private final NekoListBase plugin;
+    private final NekoList plugin;
     private final Map<String, Object> config;
     private JDA jda;
     private boolean starting = false;
+    private boolean stopping = false;
+    private final ConcurrentHashMap<String, Long> commandCooldowns = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService cooldownCleaner = Executors.newSingleThreadScheduledExecutor();
+    private static final long COMMAND_COOLDOWN_MS = 2000;
+    private static final long COOLDOWN_CLEANUP_INTERVAL = 300000;
     
-    public DiscordBot(NekoListBase plugin, Map<String, Object> config) {
+    public DiscordBot(NekoList plugin, Map<String, Object> config) {
         this.plugin = plugin;
         this.config = config;
+        startCooldownCleaner();
+    }
+    
+    private void startCooldownCleaner() {
+        cooldownCleaner.scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            commandCooldowns.entrySet().removeIf(entry -> now - entry.getValue() > COMMAND_COOLDOWN_MS);
+        }, COOLDOWN_CLEANUP_INTERVAL, COOLDOWN_CLEANUP_INTERVAL, TimeUnit.MILLISECONDS);
     }
     
     public boolean startBot() {
-        if (starting) {
+        if (starting || jda != null) {
             return false;
         }
         
         starting = true;
         try {
             String token = (String) config.get("discord-bot.token");
-            if (token == null || token.trim().isEmpty() || token.equals("YOUR_BOT_TOKEN_HERE") || token.length() < 50 || !token.matches("[A-Za-z0-9_.-]+")) {
+            if (!isValidToken(token)) {
                 getLogger().severe("Invalid Discord bot token!");
                 starting = false;
                 return false;
@@ -41,6 +62,9 @@ public class DiscordBot extends ListenerAdapter {
             
             jda = JDABuilder.createDefault(token)
                 .enableIntents(GatewayIntent.GUILD_MEMBERS, GatewayIntent.MESSAGE_CONTENT)
+                .setChunkingFilter(ChunkingFilter.NONE)
+                .disableCache(CacheFlag.EMOJI, CacheFlag.STICKER, CacheFlag.VOICE_STATE)
+                .setEnableShutdownHook(false)
                 .addEventListeners(this)
                 .build();
             
@@ -48,9 +72,17 @@ public class DiscordBot extends ListenerAdapter {
             
             jda.updateCommands().addCommands(getSlashCommands()).queue();
             
-            getLogger().info("Discord bot started successfully!");
             starting = false;
             return true;
+        } catch (InvalidTokenException e) {
+            getLogger().severe("Invalid Discord token!");
+            starting = false;
+            return false;
+        } catch (InterruptedException e) {
+            getLogger().severe("Discord bot interrupted");
+            Thread.currentThread().interrupt();
+            starting = false;
+            return false;
         } catch (Exception e) {
             getLogger().severe("Failed to start Discord bot: " + e.getMessage());
             starting = false;
@@ -58,19 +90,52 @@ public class DiscordBot extends ListenerAdapter {
         }
     }
     
+    private boolean isValidToken(String token) {
+        if (token == null || token.trim().isEmpty()) {
+            return false;
+        }
+        if (token.equals("YOUR_BOT_TOKEN_HERE")) {
+            return false;
+        }
+        if (token.length() < 50) {
+            return false;
+        }
+        if (!token.matches("[A-Za-z0-9_.-]+")) {
+            return false;
+        }
+        return true;
+    }
+    
     public void stopBot() {
-        if (jda != null) {
-            try {
-                jda.shutdown();
-                getLogger().info("Discord bot stopped");
-            } catch (Exception e) {
-                getLogger().severe("Error stopping Discord bot: " + e.getMessage());
+        if (stopping || jda == null) {
+            return;
+        }
+        
+        stopping = true;
+        try {
+            cooldownCleaner.shutdown();
+            if (!cooldownCleaner.awaitTermination(5, TimeUnit.SECONDS)) {
+                cooldownCleaner.shutdownNow();
             }
-            jda = null;
+            
+            if (jda != null) {
+                jda.shutdown();
+                jda = null;
+            }
+        } catch (Exception e) {
+            getLogger().warning("Error while shutting down Discord bot: " + e.getMessage());
+        } finally {
+            stopping = false;
+            starting = false;
+            commandCooldowns.clear();
         }
     }
     
-    public NekoListBase getPlugin() {
+    public boolean isRunning() {
+        return jda != null && jda.getStatus() == JDA.Status.CONNECTED;
+    }
+    
+    public NekoList getPlugin() {
         return plugin;
     }
     
@@ -89,6 +154,7 @@ public class DiscordBot extends ListenerAdapter {
         String removeDescription = plugin.getMessage("discord.remove-description");
         String listDescription = plugin.getMessage("discord.list-description");
         String statusDescription = plugin.getMessage("discord.status-description");
+        String reloadDescription = plugin.getMessage("discord.reload-description");
         
         return List.of(
             Commands.slash("ping", pingDescription),
@@ -99,23 +165,27 @@ public class DiscordBot extends ListenerAdapter {
                     new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("remove", removeDescription)
                         .addOption(net.dv8tion.jda.api.interactions.commands.OptionType.STRING, "player", plugin.getMessage("discord.player-option-description"), true),
                     new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("list", listDescription),
-                    new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("status", statusDescription)
+                    new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("status", statusDescription),
+                    new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("reload", reloadDescription)
                 )
         );
     }
     
     private String cleanMessage(String message) {
         if (message == null) return "";
-        return message.replace("§a", "")
-                     .replace("§c", "")
-                     .replace("§e", "")
-                     .replace("§6", "")
-                     .replace("§7", "")
-                     .replace("&a", "")
-                     .replace("&c", "")
-                     .replace("&e", "")
-                     .replace("&6", "")
-                     .replace("&7", "");
+        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(
+            net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(message)
+        );
+    }
+    
+    private boolean checkCooldown(String userId) {
+        long now = System.currentTimeMillis();
+        Long lastUsed = commandCooldowns.get(userId);
+        if (lastUsed != null && (now - lastUsed) < COMMAND_COOLDOWN_MS) {
+            return false;
+        }
+        commandCooldowns.put(userId, now);
+        return true;
     }
     
     @Override
@@ -123,6 +193,11 @@ public class DiscordBot extends ListenerAdapter {
         if (!event.isFromGuild()) return;
         
         String userId = event.getUser().getId();
+        
+        if (!checkCooldown(userId)) {
+            event.reply("Please wait before using another command.").setEphemeral(true).queue();
+            return;
+        }
         
         List<String> allowedUsers = new ArrayList<>();
         List<String> allowedRoles = new ArrayList<>();
@@ -147,7 +222,6 @@ public class DiscordBot extends ListenerAdapter {
                 }
             }
         } catch (Exception e) {
-            getLogger().warning("Error parsing permission lists: " + e.getMessage());
         }
         
         boolean hasPermission = false;
@@ -183,7 +257,16 @@ public class DiscordBot extends ListenerAdapter {
             
             switch (event.getSubcommandName()) {
                 case "add":
-                    String playerToAdd = event.getOption("player").getAsString();
+                    net.dv8tion.jda.api.interactions.commands.OptionMapping playerOptionAdd = event.getOption("player");
+                    if (playerOptionAdd == null) {
+                        event.reply("Player option is required.").setEphemeral(true).queue();
+                        return;
+                    }
+                    String playerToAdd = playerOptionAdd.getAsString();
+                    if (!isValidPlayerName(playerToAdd)) {
+                        event.reply(cleanMessage(plugin.getMessage("errors.invalid-name"))).setEphemeral(true).queue();
+                        return;
+                    }
                     if (plugin.isPlayerWhitelisted(playerToAdd)) {
                         event.reply(cleanMessage(plugin.getMessage("player-already-whitelisted").replace("%player%", playerToAdd))).setEphemeral(true).queue();
                     } else {
@@ -193,7 +276,12 @@ public class DiscordBot extends ListenerAdapter {
                     break;
                     
                 case "remove":
-                    String playerToRemove = event.getOption("player").getAsString();
+                    net.dv8tion.jda.api.interactions.commands.OptionMapping playerOptionRemove = event.getOption("player");
+                    if (playerOptionRemove == null) {
+                        event.reply("Player option is required.").setEphemeral(true).queue();
+                        return;
+                    }
+                    String playerToRemove = playerOptionRemove.getAsString();
                     if (!plugin.isPlayerWhitelisted(playerToRemove)) {
                         event.reply(cleanMessage(plugin.getMessage("player-not-whitelisted").replace("%player%", playerToRemove))).setEphemeral(true).queue();
                     } else {
@@ -218,7 +306,27 @@ public class DiscordBot extends ListenerAdapter {
                         cleanMessage(plugin.getMessage("whitelist-disabled"));
                     event.reply(statusMessage).setEphemeral(true).queue();
                     break;
+                    
+                case "reload":
+                    plugin.reloadNekoListConfig();
+                    event.reply(cleanMessage(plugin.getMessage("reload-success"))).setEphemeral(true).queue();
+                    break;
             }
         }
+    }
+    
+    private boolean isValidPlayerName(String name) {
+        if (name == null || name.isEmpty() || name.length() > 16) {
+            return false;
+        }
+        return name.matches("^[a-zA-Z0-9_]{1,16}$");
+    }
+    
+    @Override
+    public void onShutdown(ShutdownEvent event) {
+        stopping = false;
+        starting = false;
+        jda = null;
+        commandCooldowns.clear();
     }
 }

@@ -1,35 +1,69 @@
-no-permission: "&cYou don't have permission to use this command."
-whitelist-enabled: "&aWhitelist has been enabled."
-whitelist-disabled: "&cWhitelist has been disabled."
-whitelist-on-join: "&cThe server is whitelisted."
-not-whitelisted: "&cYou are not whitelisted on this server."
-player-added: "&aPlayer %player% has been added to whitelist."
-player-removed: "&cPlayer %player% has been removed from whitelist."
-player-not-found: "&cPlayer %player% not found."
-player-already-whitelisted: "&cPlayer %player% is already whitelisted."
-player-not-whitelisted: "&cPlayer %player% is not whitelisted."
-reload-success: "&aConfiguration reloaded successfully."
-whitelist-empty: "&eWhitelist is empty."
-whitelist-list: "&aWhitelisted players: &e%players%"
+no-permission: "<red>You don't have permission to use this command."
+whitelist-enabled: "<green>Whitelist has been enabled."
+whitelist-disabled: "<red>Whitelist has been disabled."
+whitelist-on-join: "<red>The server is whitelisted."
+not-whitelisted: "<red>You are not whitelisted on this server."
+player-added: "<green>Player %player% has been added to whitelist."
+player-removed: "<red>Player %player% has been removed from whitelist."
+player-not-found: "<red>Player %player% not found."
+player-already-whitelisted: "<red>Player %player% is already whitelisted."
+player-not-whitelisted: "<red>Player %player% is not whitelisted."
+reload-success: "<green>Configuration reloaded successfully."
+whitelist-empty: "<yellow>Whitelist is empty."
+whitelist-list: "<green>Whitelisted players: <yellow>%players%"
 usage: |
-  &6NekoList Commands:
-  &e/whitelist help &7- Show this help
-  &e/whitelist on &7- Enable whitelist
-  &e/whitelist off &7- Disable whitelist
-  &e/whitelist list &7- Show whitelisted players
-  &e/whitelist add <player> &7- Add player to whitelist
-  &e/whitelist remove <player> &7- Remove player from whitelist
-  &e/whitelist reload &7- Reload configuration
+  <gold>NekoList Commands:
+  <yellow>/whitelist help</yellow> <gray>- Show this help
+  <yellow>/whitelist on</yellow> <gray>- Enable whitelist
+  <yellow>/whitelist off</yellow> <gray>- Disable whitelist
+  <yellow>/whitelist list</yellow> <gray>- Show whitelisted players
+  <yellow>/whitelist add <player></yellow> <gray>- Add player to whitelist
+  <yellow>/whitelist remove <player></yellow> <gray>- Remove player from whitelist
+  <yellow>/whitelist reload</yellow> <gray>- Reload configuration
 
 discord:
   ping: "Ping!"
   pong: "Pong: %d ms"
-  whitelist-usage: "Please use a subcommand: add, remove, list, status"
+  whitelist-usage: "Please use a subcommand: add, remove, list, status, reload"
   ping-description: "Check bot latency"
   whitelist-description: "Manage Minecraft server whitelist"
   add-description: "Add player to whitelist"
   remove-description: "Remove player from whitelist"
   list-description: "List whitelisted players"
   status-description: "Check whitelist status"
+  reload-description: "Reload plugin configuration"
   player-option-description: "Player name"
   no-permission: "You don't have permission to use this command."
+  bot-starting: "Discord bot is starting..."
+  bot-stopping: "Discord bot is stopping..."
+  bot-started: "Discord bot started successfully"
+  bot-failed: "Failed to start Discord bot"
+
+errors:
+  cooldown: "<red>Please wait before using another command."
+  database-connection: "<red>Database connection failed: %error%"
+  database-switch: "<red>Database connection failed, switched to file database"
+  file-save: "<red>Failed to save file: %error%"
+  file-load: "<red>Failed to load file: %error%"
+  player-fetch: "<red>Failed to fetch player data: %error%"
+  mojang-api: "<red>Failed to contact Mojang API: %error%"
+  invalid-name: "<red>Invalid player name. Must be 1-16 characters, letters, numbers and underscores only"
+  
+success:
+  database-connected: "<green>Database connected successfully"
+  file-saved: "<green>File saved successfully"
+  player-updated: "<green>Player data updated"
+  
+info:
+  folia-detected: "<yellow>Folia server detected - using Folia schedulers"
+  paper-detected: "<yellow>Paper/Bukkit server detected - using Bukkit schedulers"
+  reloading: "<yellow>Reloading configuration..."
+  checking-updates: "<yellow>Checking for updates..."
+  
+status:
+  enabled: "<green>Enabled"
+  disabled: "<red>Disabled"
+  online: "<green>Online"
+  offline: "<red>Offline"
+  connected: "<green>Connected"
+  disconnected: "<red>Disconnected"

@@ -3,6 +3,22 @@
 language: "en-US"
 # Available languages: en-US, en-GB, es-ES, es-419, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW
 
+# Database settings
+database:
+  # Database type: "mysql" or "file"
+  type: "file"
+  
+  # MySQL/MariaDB settings
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "minecraft"
+    username: "username"
+    password: "password"
+    table: "whitelist"
+    use-ssl: false
+    connection-timeout: 30000
+
 # Discord Bot settings
 discord-bot:
   # Enable or disable Discord bot

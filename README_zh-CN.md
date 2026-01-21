@@ -5,7 +5,7 @@
 [![Modrinth](https://img.shields.io/modrinth/dt/nekolist?label=downloads&logo=modrinth)](https://modrinth.com/plugin/nekolist)
 [![GitHub Repo stars](https://img.shields.io/github/stars/hanamuramiyu/NekoList?style=social)](https://github.com/hanamuramiyu/NekoList)
 
-**一款现代化的多平台白名单插件，支持 Discord 集成。**
+**支持数据库、Folia兼容性和Discord集成的现代白名单插件。**
 
 [<kbd> <br> 🇺🇸 English (US) <br> </kbd>](README.md) | [<kbd> <br> 🇯🇵 日本語 (ja-JP) <br> </kbd>](README_ja-JP.md) | [<kbd> <br>🇨🇳 简体中文 (zh-CN) [Current] <br> </kbd>](README_zh-CN.md)
 
@@ -13,139 +13,191 @@
 
 ## ✨ 功能
 
-### 通用白名单系统
-- **持久化玩家数据**: 使用 UUID 和昵称安全地链接玩家，进行可靠的验证。
-- **昵称更改保护**: 玩家即使更改 Minecraft 用户名后，仍会保留在白名单中。*（需要 `online-mode=true`）*
-- **智能回退**: 优先使用 UUID 进行准确验证，必要时回退到昵称。
+### 🗄️ 数据库与存储
+- **双重存储选项**: 可使用基于文件的存储或MySQL/MariaDB数据库
+- **自动回退**: 数据库连接失败时无缝切换到文件存储
+- **数据持久性**: 确保服务器重启和插件重载时的数据完整性
 
-### Discord 集成
-- **交互式机器人命令**: 通过 Discord 中的斜杠命令（`/whitelist add`, `/whitelist remove` 等）直接管理您的白名单。
-- **角色和用户权限**: 将机器人命令的使用限制为特定的 Discord 角色或用户 ID，以增强安全性。
+### ⚡ 性能与兼容性
+- **Folia服务器支持**: 使用自适应调度器与Folia服务器完全兼容
+- **现代格式化**: 支持使用`<color>`标签进行富文本格式化的MiniMessage
+- **Java 21**: 使用最新Java构建，提供最佳性能和安全性
 
-### 多平台兼容性
-- **Bukkit 及其衍生版**: 支持 Spigot、Paper、Purpur 和其他基于 Bukkit 的服务器。
-- **Velocity 代理**: 完全支持 Velocity 代理网络。
-- **统一配置**: 单个 `config.yml` 文件即可在所有支持的平台上无缝工作。
+### 🔐 安全与管理
+- **基于UUID的验证**: 使用UUID和昵称回退进行高级玩家验证
+- **智能数据同步**: 登录时自动玩家数据同步
+- **连接池**: 使用HikariCP实现高效的数据库连接
+- **基于角色的权限**: 通过用户和角色白名单实现细粒度Discord权限控制
 
 ---
 
 ## 🚀 安装
 
-### 对于 Bukkit/Spigot/Paper/Purpur 服务器：
-1.  从 [发布页面](https://github.com/hanamuramiyu/NekoList/releases) 下载最新的 `.jar` 文件。
-2.  将 `.jar` 文件放入服务器的 `plugins` 文件夹。
-3.  启动或重启服务器。
-4.  在 `plugins/NekoList/` 目录下找到生成的 `config.yml` 文件，并根据需要进行配置。
+### 系统要求
+- **Java 21** 或更高版本
+- **Minecraft 1.21.1** 或更高版本
+- **Bukkit/Paper/Purpur/Folia** 服务器
 
-### 对于 Velocity 代理：
-1.  从 [发布页面](https://github.com/hanamuramiyu/NekoList/releases) 下载最新的 `.jar` 文件。
-2.  将 `.jar` 文件放入代理的 `plugins` 文件夹。
-3.  启动或重启 Velocity 代理。
-4.  在 `plugins/NekoList/` 目录下找到生成的 `config.yml` 文件，并根据需要进行配置。
+### 安装步骤:
+1.  从[发布页面](https://github.com/hanamuramiyu/NekoList/releases)或[Modrinth](https://modrinth.com/plugin/nekolist)下载最新的`.jar`文件
+2.  将`.jar`文件放入服务器的`plugins`文件夹
+3.  启动或重启服务器
+4.  根据需要配置`plugins/NekoList/config.yml`
 
 ---
 
 ## ⚙️ 配置
 
-主配置文件位于 `plugins/NekoList/config.yml`。
-
-配置示例:
-
+### 基本设置
 ```yaml
-# NekoList 配置
-# 语言设置
+# NekoList 配置 v2.0.0
 language: "en-US"
 # 可用语言: en-US, en-GB, es-ES, es-419, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW
 
+# 数据库设置
+database:
+  type: "file"  # "file" 或 "mysql"
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "minecraft"
+    username: "username"
+    password: "password"
+    table: "whitelist"
+    use-ssl: false
+    connection-timeout: 30000
+
 # Discord 机器人设置
 discord-bot:
-  # 启用或禁用 Discord 机器人
   enabled: false
-  
-  # 您的 Discord 机器人令牌
-  # 获取地址: https://discord.com/developers/applications    
   token: "YOUR_BOT_TOKEN_HERE"
-  
-  # 可以使用机器人命令的角色 ID 列表
-  # 示例: ["123456789012345678", "987654321098765432"]
-  # 获取角色 ID 方法: 在 Discord 中启用开发者模式 -> 右键单击角色 -> 复制 ID
   allowed-roles: []
-  
-  # 可以使用机器人命令的用户 ID 列表
-  # 示例: ["123456789012345678", "987654321098765432"]
-  # 获取用户 ID 方法: 在 Discord 中启用开发者模式 -> 右键单击用户 -> 复制 ID
   allowed-users: []
 ```
+
+### 数据库配置
+- **文件模式**: 使用`whitelist.yml`进行存储（默认，推荐用于小型服务器）
+- **MySQL模式**: 外部数据库存储（推荐用于大型网络）
 
 ---
 
 ## 🔧 命令与权限
 
 ### 游戏内命令 (`/whitelist`)
-- `/whitelist help` - 显示可用命令。
-- `/whitelist on` - 启用白名单。
-- `/whitelist off` - 禁用白名单。
-- `/whitelist list` - 显示白名单上的玩家。
-- `/whitelist add <player>` - 将玩家添加到白名单。
-- `/whitelist remove <player>` - 从白名单中移除玩家。
-- `/whitelist reload` - 重新加载配置文件。
+- `/whitelist help` - 显示可用命令
+- `/whitelist on` - 启用白名单
+- `/whitelist off` - 禁用白名单
+- `/whitelist list` - 列出白名单中的玩家
+- `/whitelist add <player>` - 将玩家添加到白名单
+- `/whitelist remove <player>` - 从白名单中移除玩家
+- `/whitelist reload` - 重新加载配置
 
-**权限节点:** `nekolist.use`
+**权限节点:**
+- `nekolist.use` - 使用白名单命令
+- `nekolist.bypass` - 绕过白名单检查
+- `nekolist.admin` - 完全管理访问权限
 
-### Discord 斜杠命令 (需要机器人设置)
-- `/ping` - 测试机器人的延迟。
-- `/whitelist add <player>` - 将玩家添加到白名单。
-- `/whitelist remove <player>` - 从白名单中移除玩家。
-- `/whitelist list` - 列出白名单上的玩家。
-- `/whitelist status` - 检查白名单状态。
+### Discord 斜杠命令
+- `/ping` - 检查机器人延迟
+- `/whitelist add <player>` - 将玩家添加到白名单
+- `/whitelist remove <player>` - 从白名单中移除玩家
+- `/whitelist list` - 列出白名单中的玩家
+- `/whitelist status` - 检查白名单状态
+- `/whitelist reload` - 重新加载插件配置
+
+---
+
+## 🚨 v2.0.0重要注意事项
+
+### ⚠️ 破坏性变更
+1. **移除Velocity支持**: v2.0.0+仅支持Bukkit、Paper、Purpur和Folia服务器
+2. **MiniMessage格式化**: 语言文件现在使用`<color>`标签而非传统的`&`代码
+3. **需要Java 21**: 最低Java版本从17更新到21
+4. **配置更新**: 部分配置选项已重新结构化
+
+### 🔄 从v1.x迁移
+1. **备份数据**: 复制`plugins/NekoList/whitelist.yml`
+2. **更新语言文件**: 将`&`代码转换为MiniMessage格式:
+   ```yaml
+   # 旧格式 (v1.x)
+   player-added: "&aPlayer %player% has been added to whitelist."
+   
+   # 新格式 (v2.0.0)
+   player-added: "<green>Player %player% has been added to whitelist."
+   ```
+3. **Velocity用户**: 如需Velocity兼容性，请继续使用v1.2.1
 
 ---
 
 ## 🌐 添加新语言
 
-1.  （运行插件一次后）导航至 `plugins/NekoList/lang/` 目录。
-2.  复制默认的 `en-US.yml` 文件。
-3.  将副本重命名为所需的语言代码（例如 `fr-FR.yml`, `de-DE.yml`）。您可以在现有的语言文件中找到代码。
-4.  编辑复制的文件，仅翻译值（冒号右侧的文本），保持键（左侧）不变。
-5.  在 `config.yml` 中将 `language` 设置更新为您新的语言代码。
+1.  导航到`plugins/NekoList/lang/`目录
+2.  复制`en-US.yml`作为模板
+3.  重命名为您的语言代码（例如`fr-FR.yml`、`de-DE.yml`）
+4.  使用**MiniMessage格式**（`<color>`标签）翻译所有值
+5.  更新`config.yml`中的`language`设置
+
+**MiniMessage标签示例:**
+- `<red>` - 红色文本
+- `<green>` - 绿色文本
+- `<yellow>` - 黄色文本
+- `<gray>` - 灰色文本
+- `<gold>` - 金色文本
+- `<bold>` - **粗体文本**
 
 ---
 
 ## 🏗️ 从源码构建
 
-1.  克隆仓库:
-    ```bash
-    git clone https://github.com/hanamuramiyu/NekoList.git  
-    cd NekoList
-    ```
-2.  使用 Gradle 构建插件 JAR 文件:
-    ```bash
-    ./gradlew build
-    ```
-3.  编译好的插件文件将位于 `build/libs/` 目录中。
+```bash
+# 克隆仓库
+git clone https://github.com/hanamuramiyu/NekoList.git
+cd NekoList
+
+# 构建插件
+./gradlew build
+
+# 输出文件: build/libs/NekoList-2.0.0.jar
+```
+
+**要求:**
+- Java 21 JDK
+- Gradle 9.2.0+
 
 ---
 
 ## 🤝 贡献
 
-我们欢迎各种贡献！请随时提交拉取请求 (Pull Request)，报告错误或提出新功能建议。
+欢迎贡献！请遵循以下步骤:
+1. Fork仓库
+2. 创建功能分支
+3. 进行更改
+4. 提交Pull Request
+
+请确保代码遵循现有风格并包含适当的测试。
 
 ---
 
 ## 🐛 问题报告
 
-发现错误或有功能请求？请在我们的 [GitHub Issues](https://github.com/hanamuramiyu/NekoList/issues) 页面创建一个议题。
+发现错误或有功能请求？请:
+1. 检查现有[Issues](https://github.com/hanamuramiyu/NekoList/issues)
+2. 创建描述清晰的新issue
+3. 包含服务器日志和配置详情
+4. 指定服务器类型和版本
 
 ---
 
 ## 📄 许可证
 
-该项目根据 MIT 许可证授权 - 详情请参阅 [LICENSE](LICENSE) 文件。
+该项目根据MIT许可证授权 - 详情请参阅[LICENSE](LICENSE)文件。
 
 ---
 
 <div align="center">
 
 **由 Hanamura Miyu 倾心制作 ❤️**
+
+*如需Velocity支持，请使用v1.2.1以获得兼容性。*
 
 </div>
