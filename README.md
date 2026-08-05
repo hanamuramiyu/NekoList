@@ -1,5 +1,11 @@
 <div align="center">
 
+<div style="background:transparent;padding:0;display:inline-block;">
+  <a href="https://mimimofu.com" target="_blank">
+    <img src="https://mimimofu.com/3.png" alt="MimiMofu" style="max-width:100%;height:auto;display:block;">
+  </a>
+</div>
+
 # NekoList
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Modrinth](https://img.shields.io/modrinth/dt/nekolist?label=downloads&logo=modrinth)](https://modrinth.com/plugin/nekolist)
