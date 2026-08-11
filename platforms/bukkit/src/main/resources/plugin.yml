@@ -1,0 +1,16 @@
+name: monban
+version: '@version@'
+main: hanamuramiyu.monban.bukkit.MonbanBukkitPlugin
+api-version: '1.21'
+description: Minecraft access control for Bukkit and Spigot.
+author: Hanamura Miyu
+
+commands:
+  monban:
+    description: monban administration
+    usage: /monban
+
+permissions:
+  monban.command.whitelist:
+    description: Allows monban whitelist administration.
+    default: op

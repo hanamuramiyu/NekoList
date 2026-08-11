@@ -1,0 +1,8 @@
+package hanamuramiyu.monban.velocity;
+
+public final class MonbanVelocityPluginMetadata {
+    public static final String VERSION = "@version@";
+
+    private MonbanVelocityPluginMetadata() {
+    }
+}

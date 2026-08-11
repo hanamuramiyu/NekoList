@@ -1,0 +1,12 @@
+name: monban
+version: '@version@'
+main: hanamuramiyu.monban.paper.MonbanPaperPlugin
+api-version: '1.21'
+description: Minecraft access control for Paper and Folia.
+author: Hanamura Miyu
+folia-supported: true
+
+permissions:
+  monban.command.whitelist:
+    description: Allows monban whitelist administration.
+    default: op

@@ -1,0 +1,110 @@
+name: Bug report
+description: Report a reproducible problem with monban
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough information to reproduce it.
+        If this may be an access bypass or another security vulnerability, stop here and follow SECURITY.md instead.
+
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: Affected platform(s)
+      options:
+        - label: Bukkit / Spigot
+        - label: Paper
+        - label: Folia
+        - label: Velocity
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - STANDALONE
+        - VELOCITY
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: monban-version
+    attributes:
+      label: monban version
+      placeholder: "3.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: platform-version
+    attributes:
+      label: Minecraft / platform version
+      description: Include the server or proxy implementation and version.
+      placeholder: "Paper 1.21.11 build ... / Velocity 3.x ..."
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      placeholder: "21 / 25"
+    validations:
+      required: true
+
+  - type: textarea
+    id: relevant-config
+    attributes:
+      label: Relevant configuration
+      description: Paste only the configuration needed to reproduce the problem. Remove secrets before posting.
+      render: yaml
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What did you expect monban to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Include the relevant server/proxy log section and stack trace, if any. Remove secrets before posting.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed passwords, tokens, forwarding secrets, and other sensitive values from the report.
+          required: true

@@ -1,209 +1,53 @@
 <div align="center">
 
-<div style="background:transparent;padding:0;display:inline-block;">
-  <a href="https://mimimofu.com" target="_blank">
-    <img src="https://mimimofu.com/3.png" alt="MimiMofu" style="max-width:100%;height:auto;display:block;">
-  </a>
-</div>
+<img src="logo.png" alt="monban">
 
-# NekoList
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Modrinth](https://img.shields.io/modrinth/dt/nekolist?label=downloads&logo=modrinth)](https://modrinth.com/plugin/nekolist)
-[![GitHub Repo stars](https://img.shields.io/github/stars/hanamuramiyu/NekoList?style=social)](https://github.com/hanamuramiyu/NekoList)
+# monban
 
-**A modern whitelist plugin with database support, Folia compatibility, and Discord integration.**
+Minecraft access control for standalone servers and Velocity networks.
 
-[<kbd> <br>🇺🇸 English (US) [Current] <br> </kbd>](README.md) | [<kbd> <br> 🇯🇵 日本語 (ja-JP) <br> </kbd>](README_ja-JP.md) | [<kbd> <br> 🇨🇳 简体中文 (zh-CN) <br> </kbd>](README_zh-CN.md)
+[Modrinth](https://modrinth.com/plugin/monban) · [Documentation](https://monban.miyu.pw/) · [GitHub Releases](https://github.com/hanamuramiyu/monban/releases)
 
 </div>
 
-## ✨ Features
+monban is a whitelist and access-control plugin with explicit `ONLINE` and `OFFLINE` player identities. It supports standalone Bukkit/Spigot and Paper/Folia servers, and can act as the access authority for a Velocity network with network-wide and scoped backend access.
 
-### 🗄️ Database & Storage
-- **Dual Storage Options**: Use either file-based storage or MySQL/MariaDB databases
-- **Automatic Fallback**: Seamlessly switches to file storage if database connection fails
-- **Data Persistence**: Guaranteed data integrity across server restarts and plugin reloads
+## Supported platforms
 
-### ⚡ Performance & Compatibility
-- **Folia Server Support**: Full compatibility with Folia servers using adaptive schedulers
-- **Modern Formatting**: MiniMessage support for rich text formatting with `<color>` tags
-- **Java 21**: Built with the latest Java for optimal performance and security
+| Platform | Deployment | Global whitelist | Scoped backend access | Hybrid auth selection |
+| --- | --- | :---: | :---: | :---: |
+| Bukkit / Spigot | Standalone | ✓ | — | — |
+| Paper / Folia | Standalone | ✓ | — | — |
+| Velocity | Network authority | ✓ | ✓ | ✓ |
 
-### 🔐 Security & Management
-- **UUID-Based Verification**: Advanced player verification using UUIDs with nickname fallback
-- **Smart Data Sync**: Automatic player data synchronization on login
-- **Connection Pooling**: Efficient database connections using HikariCP
-- **Role-Based Permissions**: Granular Discord permission control with user and role whitelists
+The Paper/Folia artifact is a Paper plugin and is separate from the Bukkit/Spigot compatibility artifact. Hybrid authentication-flow selection belongs to Velocity; the Paper/Folia plugin does not implement `deployment.mode: VELOCITY`.
 
----
+## Features
 
-## 🚀 Installation
+- Explicit `ONLINE` and `OFFLINE` identities instead of inferring trust from the presence of a UUID.
+- One `/monban whitelist` administration model across supported platforms.
+- Network-wide whitelist enforcement on Velocity.
+- Positive `SERVER_GROUP` and `SERVER` access grants on Velocity.
+- Per-backend `OPEN` and `GRANT_REQUIRED` policies.
+- Optional Velocity hybrid `ONLINE` / `OFFLINE` authentication-flow selection.
+- Native Folia-compatible scheduling at the Paper platform boundary.
+- Strict, versioned YAML configuration and persistent access state.
+- Fail-closed startup and access verification for security-sensitive initialization failures.
 
-### System Requirements
-- **Java 21** or higher
-- **Minecraft 1.21.1** or higher
-- **Bukkit/Paper/Purpur/Folia** server
+## Requirements
 
-### Installation Steps:
-1.  Download the latest `.jar` file from [Releases](https://github.com/hanamuramiyu/NekoList/releases) or [Modrinth](https://modrinth.com/plugin/nekolist)
-2.  Place the `.jar` file into your server's `plugins` folder
-3.  Start or restart your server
-4.  Configure `plugins/NekoList/config.yml` as needed
+monban plugin bytecode targets Java 21. Server runtime requirements are platform/version-specific; in particular, Paper `26.1+` requires Java 25 to run.
 
----
+## Install
 
-## ⚙️ Configuration
+1. Download the build for your platform from [Modrinth](https://modrinth.com/plugin/monban) or [GitHub Releases](https://github.com/hanamuramiyu/monban/releases).
+2. Put the JAR in the platform's `plugins/` directory.
+3. For standalone Bukkit/Spigot or Paper/Folia, set the native Minecraft whitelist to `white-list=false`.
+4. Start the server once, configure `plugins/monban/config.yml`, then restart.
+5. Manage the global whitelist with `/monban whitelist ...`. Velocity additionally provides `/monban access ...` and `/monban status`.
 
-### Basic Setup
-```yaml
-# NekoList Configuration v2.0.0
-language: "en-US"
-# Available languages: en-US, en-GB, es-ES, es-419, ja-JP, ru-RU, uk-UA, zh-CN, zh-TW
+Full setup, configuration, command, storage, and Velocity documentation is available at **[monban.miyu.pw](https://monban.miyu.pw/)**.
 
-# Database settings
-database:
-  type: "file"  # "file" or "mysql"
-  mysql:
-    host: "localhost"
-    port: 3306
-    database: "minecraft"
-    username: "username"
-    password: "password"
-    table: "whitelist"
-    use-ssl: false
-    connection-timeout: 30000
+## License
 
-# Discord Bot settings
-discord-bot:
-  enabled: false
-  token: "YOUR_BOT_TOKEN_HERE"
-  allowed-roles: []
-  allowed-users: []
-```
-
-### Database Configuration
-- **File Mode**: Uses `whitelist.yml` for storage (default, recommended for small servers)
-- **MySQL Mode**: External database storage (recommended for large networks)
-
----
-
-## 🔧 Commands & Permissions
-
-### In-Game Commands (`/whitelist`)
-- `/whitelist help` - Show available commands
-- `/whitelist on` - Enable the whitelist
-- `/whitelist off` - Disable the whitelist
-- `/whitelist list` - List whitelisted players
-- `/whitelist add <player>` - Add a player to whitelist
-- `/whitelist remove <player>` - Remove a player from whitelist
-- `/whitelist reload` - Reload configuration
-
-**Permission Nodes:**
-- `nekolist.use` - Use whitelist commands
-- `nekolist.bypass` - Bypass whitelist checks
-- `nekolist.admin` - Full administrative access
-
-### Discord Slash Commands
-- `/ping` - Check bot latency
-- `/whitelist add <player>` - Add player to whitelist
-- `/whitelist remove <player>` - Remove player from whitelist
-- `/whitelist list` - List whitelisted players
-- `/whitelist status` - Check whitelist status
-- `/whitelist reload` - Reload plugin configuration
-
----
-
-## 🚨 Important Notes for v2.0.0
-
-### ⚠️ Breaking Changes
-1. **Velocity Support Removed**: v2.0.0+ only supports Bukkit, Paper, Purpur, and Folia servers
-2. **MiniMessage Formatting**: Language files now use `<color>` tags instead of legacy `&` codes
-3. **Java 21 Required**: Minimum Java version updated from 17 to 21
-4. **Configuration Updates**: Some config options have been restructured
-
-### 🔄 Migration from v1.x
-1. **Backup your data**: Copy `plugins/NekoList/whitelist.yml`
-2. **Update language files**: Convert `&` codes to MiniMessage format:
-   ```yaml
-   # Old format (v1.x)
-   player-added: "&aPlayer %player% has been added to whitelist."
-   
-   # New format (v2.0.0)
-   player-added: "<green>Player %player% has been added to whitelist."
-   ```
-3. **Velocity Users**: Continue using v1.2.1 for Velocity compatibility
-
----
-
-## 🌐 Adding New Languages
-
-1.  Navigate to `plugins/NekoList/lang/` directory
-2.  Copy `en-US.yml` as a template
-3.  Rename to your language code (e.g., `fr-FR.yml`, `de-DE.yml`)
-4.  Translate all values using **MiniMessage format** (`<color>` tags)
-5.  Update `language` setting in `config.yml`
-
-**Example MiniMessage tags:**
-- `<red>` - Red text
-- `<green>` - Green text  
-- `<yellow>` - Yellow text
-- `<gray>` - Gray text
-- `<gold>` - Gold text
-- `<bold>` - **Bold text**
-
----
-
-## 🏗️ Building from Source
-
-```bash
-# Clone repository
-git clone https://github.com/hanamuramiyu/NekoList.git
-cd NekoList
-
-# Build plugin
-./gradlew build
-
-# Output file: build/libs/NekoList-2.0.0.jar
-```
-
-**Requirements:**
-- Java 21 JDK
-- Gradle 9.2.0+
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a Pull Request
-
-Please ensure your code follows the existing style and includes appropriate tests.
-
----
-
-## 🐛 Issue Reporting
-
-Found a bug or have a feature request? Please:
-1. Check existing [Issues](https://github.com/hanamuramiyu/NekoList/issues)
-2. Create a new issue with clear description
-3. Include server logs and configuration details
-4. Specify your server type and version
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-
-**Made with ❤️ by Hanamura Miyu**
-
-*Looking for Velocity support? Use v1.2.1 for Velocity compatibility.*
-
-</div>
+monban is licensed under the [Mozilla Public License 2.0](LICENSE).

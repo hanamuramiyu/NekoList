@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest a focused improvement to monban
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem you want to solve and the real deployment/use case behind it. You do not need to design monban's internal architecture.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What limitation or workflow problem are you running into?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-behavior
+    attributes:
+      label: Proposed behavior
+      description: What should monban let the operator or player do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: Describe a concrete server/network setup where this would be useful.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: Relevant platform(s)
+      options:
+        - label: Bukkit / Spigot
+        - label: Paper
+        - label: Folia
+        - label: Velocity
+        - label: Cross-platform / not platform-specific
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. How are you handling this today, if at all?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for the same request.
+          required: true

@@ -1,0 +1,340 @@
+package hanamuramiyu.monban.config.file;
+
+import hanamuramiyu.monban.config.DeploymentSettings;
+import hanamuramiyu.monban.config.HybridIdentityPreference;
+import hanamuramiyu.monban.config.HybridIdentitySettings;
+import hanamuramiyu.monban.config.IdentitySettings;
+import hanamuramiyu.monban.config.MonbanConfig;
+import hanamuramiyu.monban.config.WhitelistSettings;
+import hanamuramiyu.monban.deployment.DeploymentMode;
+import hanamuramiyu.monban.identity.IdentityResolutionMode;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.error.YAMLException;
+import org.yaml.snakeyaml.events.AliasEvent;
+import org.yaml.snakeyaml.events.Event;
+
+import java.io.IOException;
+import java.io.StringReader;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+public final class FileMonbanConfigLoader {
+    private static final int CONFIG_VERSION = 1;
+    private static final String CONFIG_VERSION_KEY = "config-version";
+    private static final String DEPLOYMENT_KEY = "deployment";
+    private static final String WHITELIST_KEY = "whitelist";
+    private static final String IDENTITY_KEY = "identity";
+    private static final String HYBRID_KEY = "hybrid";
+    private static final String ENABLED_KEY = "enabled";
+    private static final String MODE_KEY = "mode";
+    private static final String DUAL_ENTRY_PREFERENCE_KEY = "dual-entry-preference";
+
+    private static final Set<String> ROOT_FIELDS = Set.of(
+            CONFIG_VERSION_KEY,
+            DEPLOYMENT_KEY,
+            WHITELIST_KEY,
+            IDENTITY_KEY
+    );
+    private static final Set<String> DEPLOYMENT_FIELDS = Set.of(MODE_KEY);
+    private static final Set<String> WHITELIST_FIELDS = Set.of(ENABLED_KEY);
+    private static final Set<String> STANDALONE_IDENTITY_FIELDS = Set.of(MODE_KEY);
+    private static final Set<String> VELOCITY_IDENTITY_FIELDS = Set.of(MODE_KEY, HYBRID_KEY);
+    private static final Set<String> HYBRID_FIELDS = Set.of(ENABLED_KEY, DUAL_ENTRY_PREFERENCE_KEY);
+
+    private final Path file;
+    private final MonbanConfig creationDefaults;
+    private final Yaml loader;
+
+    public FileMonbanConfigLoader(Path file) {
+        this(file, MonbanConfig.defaults());
+    }
+
+    public FileMonbanConfigLoader(Path file, MonbanConfig creationDefaults) {
+        this.file = Objects.requireNonNull(file, "file").toAbsolutePath().normalize();
+        this.creationDefaults = Objects.requireNonNull(creationDefaults, "creationDefaults");
+        this.loader = createLoader();
+    }
+
+    public MonbanConfig load() throws IOException {
+        if (!Files.exists(file)) {
+            createDefaultFile();
+        }
+
+        String yamlText = Files.readString(file, StandardCharsets.UTF_8);
+        rejectAliases(yamlText);
+
+        Object document;
+        try {
+            Iterator<Object> documents = loader.loadAll(yamlText).iterator();
+            if (!documents.hasNext()) {
+                throw new IOException("Config is empty: " + file);
+            }
+            document = documents.next();
+            if (documents.hasNext()) {
+                throw new IOException("Config must contain exactly one YAML document: " + file);
+            }
+        } catch (YAMLException exception) {
+            throw new IOException("Invalid YAML in " + file, exception);
+        }
+
+        Map<String, Object> root = requireStringMap(document, "root");
+        rejectUnknownFields(root, ROOT_FIELDS, "root");
+
+        int configVersion = requireInteger(root.get(CONFIG_VERSION_KEY), CONFIG_VERSION_KEY);
+        if (configVersion != CONFIG_VERSION) {
+            throw new IOException("Unsupported config-version at " + CONFIG_VERSION_KEY + ": " + configVersion);
+        }
+
+        Map<String, Object> deployment = requireStringMap(root.get(DEPLOYMENT_KEY), DEPLOYMENT_KEY);
+        rejectUnknownFields(deployment, DEPLOYMENT_FIELDS, DEPLOYMENT_KEY);
+        DeploymentMode deploymentMode = requireDeploymentMode(
+                deployment.get(MODE_KEY),
+                DEPLOYMENT_KEY + "." + MODE_KEY
+        );
+
+        Map<String, Object> whitelist = requireStringMap(root.get(WHITELIST_KEY), WHITELIST_KEY);
+        rejectUnknownFields(whitelist, WHITELIST_FIELDS, WHITELIST_KEY);
+        boolean whitelistEnabled = requireBoolean(whitelist.get(ENABLED_KEY), WHITELIST_KEY + "." + ENABLED_KEY);
+
+        Map<String, Object> identity = requireStringMap(root.get(IDENTITY_KEY), IDENTITY_KEY);
+        IdentityResolutionMode identityMode = requireIdentityMode(
+                identity.get(MODE_KEY),
+                IDENTITY_KEY + "." + MODE_KEY
+        );
+        HybridIdentitySettings hybridSettings = switch (deploymentMode) {
+            case STANDALONE -> {
+                if (identity.containsKey(HYBRID_KEY)) {
+                    throw new IOException(
+                            "identity.hybrid is not supported in STANDALONE deployment.\n"
+                                    + "Remove the hybrid section. Hybrid authentication flow selection is available on Velocity."
+                    );
+                }
+                rejectUnknownFields(identity, STANDALONE_IDENTITY_FIELDS, IDENTITY_KEY);
+                yield HybridIdentitySettings.defaults();
+            }
+            case VELOCITY -> {
+                rejectUnknownFields(identity, VELOCITY_IDENTITY_FIELDS, IDENTITY_KEY);
+                Map<String, Object> hybrid = requireStringMap(
+                        identity.get(HYBRID_KEY),
+                        IDENTITY_KEY + "." + HYBRID_KEY
+                );
+                rejectUnknownFields(hybrid, HYBRID_FIELDS, IDENTITY_KEY + "." + HYBRID_KEY);
+                boolean hybridEnabled = requireBoolean(
+                        hybrid.get(ENABLED_KEY),
+                        IDENTITY_KEY + "." + HYBRID_KEY + "." + ENABLED_KEY
+                );
+                HybridIdentityPreference dualEntryPreference = requireHybridPreference(
+                        hybrid.get(DUAL_ENTRY_PREFERENCE_KEY),
+                        IDENTITY_KEY + "." + HYBRID_KEY + "." + DUAL_ENTRY_PREFERENCE_KEY
+                );
+                yield new HybridIdentitySettings(hybridEnabled, dualEntryPreference);
+            }
+        };
+
+        MonbanConfig config = new MonbanConfig(
+                new DeploymentSettings(deploymentMode),
+                new WhitelistSettings(whitelistEnabled),
+                new IdentitySettings(identityMode, hybridSettings)
+        );
+        validateHybridConfiguration(config);
+        return config;
+    }
+
+    private void createDefaultFile() throws IOException {
+        Path parent = file.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        Path temporary = Files.createTempFile(parent, file.getFileName().toString() + ".", ".tmp");
+        boolean moved = false;
+        try {
+            byte[] bytes = serializeCreationDefaults().getBytes(StandardCharsets.UTF_8);
+            try (FileChannel channel = FileChannel.open(
+                    temporary,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            )) {
+                ByteBuffer buffer = ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) {
+                    channel.write(buffer);
+                }
+                channel.force(true);
+            }
+
+            try {
+                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, file);
+            }
+            moved = true;
+        } finally {
+            if (!moved) {
+                Files.deleteIfExists(temporary);
+            }
+        }
+    }
+
+    private String serializeCreationDefaults() {
+        return switch (creationDefaults.deployment().mode()) {
+            case STANDALONE -> """
+                    config-version: %d
+                    deployment:
+                      mode: STANDALONE
+                    whitelist:
+                      enabled: %s
+                    identity:
+                      mode: %s
+                    """.formatted(
+                    CONFIG_VERSION,
+                    creationDefaults.whitelist().enabled(),
+                    creationDefaults.identity().mode().name()
+            );
+            case VELOCITY -> """
+                    config-version: %d
+                    deployment:
+                      mode: VELOCITY
+                    whitelist:
+                      enabled: %s
+                    identity:
+                      mode: %s
+                      hybrid:
+                        enabled: %s
+                        dual-entry-preference: %s
+                    """.formatted(
+                    CONFIG_VERSION,
+                    creationDefaults.whitelist().enabled(),
+                    creationDefaults.identity().mode().name(),
+                    creationDefaults.identity().hybrid().enabled(),
+                    creationDefaults.identity().hybrid().dualEntryPreference().name()
+            );
+        };
+    }
+
+    private void rejectAliases(String yamlText) throws IOException {
+        try {
+            for (Event event : loader.parse(new StringReader(yamlText))) {
+                if (event instanceof AliasEvent) {
+                    throw new IOException("YAML aliases are not supported in config: " + file);
+                }
+            }
+        } catch (YAMLException exception) {
+            throw new IOException("Invalid YAML in " + file, exception);
+        }
+    }
+
+    private static Yaml createLoader() {
+        LoaderOptions options = new LoaderOptions();
+        options.setAllowDuplicateKeys(false);
+        return new Yaml(new SafeConstructor(options));
+    }
+
+    private static void validateHybridConfiguration(MonbanConfig config) throws IOException {
+        if (!config.identity().hybrid().enabled()) {
+            return;
+        }
+        if (config.deployment().mode() != DeploymentMode.VELOCITY) {
+            throw new IOException("identity.hybrid is not supported in STANDALONE deployment.");
+        }
+        if (config.identity().mode() != IdentityResolutionMode.AUTO) {
+            throw new IOException("identity.hybrid.enabled=true requires identity.mode=AUTO.");
+        }
+    }
+
+    private static Map<String, Object> requireStringMap(Object value, String path) throws IOException {
+        if (!(value instanceof Map<?, ?> map)) {
+            throw new IOException("Expected mapping at " + path);
+        }
+
+        java.util.LinkedHashMap<String, Object> result = new java.util.LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IOException("Expected string field name at " + path);
+            }
+            result.put(key, entry.getValue());
+        }
+        return result;
+    }
+
+    private static void rejectUnknownFields(Map<String, Object> map, Set<String> allowed, String path) throws IOException {
+        for (String key : map.keySet()) {
+            if (!allowed.contains(key)) {
+                throw new IOException("Unknown field at " + path + "." + key);
+            }
+        }
+    }
+
+    private static int requireInteger(Object value, String path) throws IOException {
+        if (value instanceof Integer integer) {
+            return integer;
+        }
+        if (value instanceof Byte byteValue) {
+            return byteValue.intValue();
+        }
+        if (value instanceof Short shortValue) {
+            return shortValue.intValue();
+        }
+        if (value instanceof Long longValue && longValue >= Integer.MIN_VALUE && longValue <= Integer.MAX_VALUE) {
+            return longValue.intValue();
+        }
+        if (value instanceof java.math.BigInteger bigInteger && bigInteger.bitLength() < 32) {
+            return bigInteger.intValue();
+        }
+        throw new IOException("Expected integer at " + path);
+    }
+
+    private static boolean requireBoolean(Object value, String path) throws IOException {
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        throw new IOException("Expected boolean at " + path);
+    }
+
+    private static DeploymentMode requireDeploymentMode(Object value, String path) throws IOException {
+        if (!(value instanceof String text)) {
+            throw new IOException("Expected deployment mode at " + path);
+        }
+
+        try {
+            return DeploymentMode.valueOf(text);
+        } catch (IllegalArgumentException exception) {
+            throw new IOException("Unsupported deployment mode at " + path + ": " + text, exception);
+        }
+    }
+
+    private static IdentityResolutionMode requireIdentityMode(Object value, String path) throws IOException {
+        if (!(value instanceof String text)) {
+            throw new IOException("Expected identity mode at " + path);
+        }
+
+        try {
+            return IdentityResolutionMode.valueOf(text);
+        } catch (IllegalArgumentException exception) {
+            throw new IOException("Unsupported identity mode at " + path + ": " + text, exception);
+        }
+    }
+
+    private static HybridIdentityPreference requireHybridPreference(Object value, String path) throws IOException {
+        if (!(value instanceof String text)) {
+            throw new IOException("Expected hybrid identity preference at " + path);
+        }
+
+        try {
+            return HybridIdentityPreference.valueOf(text);
+        } catch (IllegalArgumentException exception) {
+            throw new IOException("Unsupported hybrid identity preference at " + path + ": " + text, exception);
+        }
+    }
+}
