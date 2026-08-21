@@ -20,14 +20,17 @@ import hanamuramiyu.monban.access.grant.AccessGrantAddResult;
 import hanamuramiyu.monban.access.grant.AccessGrantRemoveResult;
 import hanamuramiyu.monban.access.group.ServerGroupCatalog;
 import hanamuramiyu.monban.access.scope.AccessScope;
-import hanamuramiyu.monban.access.scope.AccessScopeType;
 import hanamuramiyu.monban.identity.IdentityType;
+import hanamuramiyu.monban.identity.OnlineProfile;
+import hanamuramiyu.monban.identity.OnlineProfileResolutionException;
+import hanamuramiyu.monban.identity.OnlineProfileResolver;
 import hanamuramiyu.monban.identity.PlayerIdentity;
+import hanamuramiyu.monban.presentation.AccessListView;
+import hanamuramiyu.monban.presentation.AccessPresentation;
+import hanamuramiyu.monban.presentation.MonbanUi;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -38,25 +41,13 @@ import java.util.function.Function;
 public final class VelocityAccessCommand {
     public static final String PERMISSION = "monban.command.access";
 
-    private static final int PAGE_SIZE = 10;
-
-    private static final Component MUTATION_FAILURE_MESSAGE =
-            Component.text("Failed to update access grants. Check the proxy log.");
-    private static final Component READ_FAILURE_MESSAGE =
-            Component.text("Failed to read access grants. Check the proxy log.");
-
-    private static final Comparator<AccessGrant> GRANT_ORDER = Comparator
-            .comparingInt((AccessGrant grant) -> scopeOrder(grant.scope().type()))
-            .thenComparing(grant -> grant.scope().id().orElse(""))
-            .thenComparing(grant -> grant.identity().type().name())
-            .thenComparing(grant -> grant.identity().normalizedName())
-            .thenComparing(grant -> grant.identity().verifiedUuid().map(UUID::toString).orElse(""));
-
     private final AccessGrantAdministrationService administrationService;
     private final ServerGroupCatalog serverGroupCatalog;
     private final ProxyServer server;
     private final Executor mutationExecutor;
     private final Logger logger;
+    private final AccessPresentation presentation;
+    private final OnlineProfileResolver profileResolver;
 
     public VelocityAccessCommand(
             AccessGrantAdministrationService administrationService,
@@ -65,16 +56,36 @@ public final class VelocityAccessCommand {
             Executor mutationExecutor,
             Logger logger
     ) {
+        this(administrationService, serverGroupCatalog, server, mutationExecutor, logger, OnlineProfileResolver.unavailable());
+    }
+
+    public VelocityAccessCommand(
+            AccessGrantAdministrationService administrationService,
+            ServerGroupCatalog serverGroupCatalog,
+            ProxyServer server,
+            Executor mutationExecutor,
+            Logger logger,
+            OnlineProfileResolver profileResolver
+    ) {
         this.administrationService = Objects.requireNonNull(administrationService, "administrationService");
         this.serverGroupCatalog = Objects.requireNonNull(serverGroupCatalog, "serverGroupCatalog");
         this.server = Objects.requireNonNull(server, "server");
         this.mutationExecutor = Objects.requireNonNull(mutationExecutor, "mutationExecutor");
         this.logger = Objects.requireNonNull(logger, "logger");
+        this.presentation = new AccessPresentation();
+        this.profileResolver = Objects.requireNonNull(profileResolver, "profileResolver");
     }
 
     public LiteralArgumentBuilder<CommandSource> build() {
         return BrigadierCommand.literalArgumentBuilder("access")
-                .requires(source -> source.hasPermission(PERMISSION))
+                .executes(context -> {
+                    if (!context.getSource().hasPermission(PERMISSION)) {
+                        context.getSource().sendMessage(new MonbanUi().unknownCommand());
+                    } else {
+                        presentation.usage().forEach(context.getSource()::sendMessage);
+                    }
+                    return Command.SINGLE_SUCCESS;
+                })
                 .then(mutationBranch("grant", Mutation.GRANT))
                 .then(mutationBranch("revoke", Mutation.REVOKE))
                 .then(listBranch());
@@ -82,6 +93,7 @@ public final class VelocityAccessCommand {
 
     private LiteralArgumentBuilder<CommandSource> mutationBranch(String literal, Mutation mutation) {
         return BrigadierCommand.literalArgumentBuilder(literal)
+                .requires(source -> source.hasPermission(PERMISSION))
                 .then(networkBranch(mutation))
                 .then(groupBranch(mutation))
                 .then(serverBranch(mutation));
@@ -123,6 +135,7 @@ public final class VelocityAccessCommand {
 
     private LiteralArgumentBuilder<CommandSource> listBranch() {
         LiteralArgumentBuilder<CommandSource> list = BrigadierCommand.literalArgumentBuilder("list")
+                .requires(source -> source.hasPermission(PERMISSION))
                 .executes(context -> executeList(context, null, 1));
 
         list.then(pageArgument(null));
@@ -210,6 +223,7 @@ public final class VelocityAccessCommand {
         return BrigadierCommand.literalArgumentBuilder("online")
                 .then(BrigadierCommand.requiredArgumentBuilder("name", StringArgumentType.word())
                         .suggests(playerSuggestions())
+                        .executes(context -> executeAutomaticMutation(context, mutation, scopeFactory))
                         .then(BrigadierCommand.requiredArgumentBuilder("uuid", StringArgumentType.word())
                                 .executes(context -> executeMutation(
                                         context,
@@ -231,10 +245,10 @@ public final class VelocityAccessCommand {
             scope = scopeFactory.apply(context);
             identity = parseIdentity(context, identityType);
         } catch (CommandInputException exception) {
-            context.getSource().sendMessage(Component.text(exception.getMessage()));
+            context.getSource().sendMessage(presentation.invalidInput(exception.getMessage()));
             return 0;
         } catch (IllegalArgumentException exception) {
-            context.getSource().sendMessage(Component.text("Invalid command input: " + exception.getMessage()));
+            context.getSource().sendMessage(presentation.invalidInput("Invalid command input: " + exception.getMessage()));
             return 0;
         }
 
@@ -242,7 +256,53 @@ public final class VelocityAccessCommand {
             mutationExecutor.execute(() -> runMutation(context.getSource(), mutation, scope, identity));
         } catch (RuntimeException exception) {
             logger.error("Failed to schedule monban access-grant mutation.", exception);
-            context.getSource().sendMessage(MUTATION_FAILURE_MESSAGE);
+            context.getSource().sendMessage(presentation.mutationFailure());
+            return 0;
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private int executeAutomaticMutation(
+            CommandContext<CommandSource> context,
+            Mutation mutation,
+            Function<CommandContext<CommandSource>, AccessScope> scopeFactory
+    ) {
+        String name = StringArgumentType.getString(context, "name");
+        AccessScope scope;
+        try {
+            PlayerIdentity.offline(name);
+            scope = scopeFactory.apply(context);
+        } catch (IllegalArgumentException exception) {
+            context.getSource().sendMessage(presentation.invalidInput("Invalid command input: " + exception.getMessage()));
+            return 0;
+        }
+        try {
+            mutationExecutor.execute(() -> {
+                try {
+                    OnlineProfile profile = profileResolver.resolve(name).toCompletableFuture().join();
+                    runMutation(context.getSource(), mutation, scope, profile.identity());
+                } catch (RuntimeException exception) {
+                    Throwable cause = exception.getCause() instanceof OnlineProfileResolutionException resolved
+                            ? resolved
+                            : exception;
+                    if (cause instanceof OnlineProfileResolutionException resolved
+                            && resolved.kind() == OnlineProfileResolutionException.Kind.NOT_FOUND) {
+                        context.getSource().sendMessage(presentation.invalidInput("Online profile not found."));
+                    } else if (cause instanceof OnlineProfileResolutionException) {
+                        context.getSource().sendMessage(presentation.invalidInput(
+                                "Online profile lookup is temporarily unavailable. Try again later."
+                        ));
+                    } else {
+                        logger.error("Failed to resolve online profile for {}.", name, exception);
+                        context.getSource().sendMessage(presentation.mutationFailure());
+                    }
+                }
+            });
+        } catch (RuntimeException exception) {
+            logger.error("Failed to schedule online profile lookup.", exception);
+            context.getSource().sendMessage(presentation.invalidInput(
+                    "Online profile lookup is temporarily unavailable. Try again later."
+            ));
             return 0;
         }
         return Command.SINGLE_SUCCESS;
@@ -258,7 +318,7 @@ public final class VelocityAccessCommand {
             try {
                 scope = scopeFactory.apply(context);
             } catch (IllegalArgumentException exception) {
-                context.getSource().sendMessage(Component.text("Invalid command input: " + exception.getMessage()));
+                context.getSource().sendMessage(presentation.invalidInput("Invalid command input: " + exception.getMessage()));
                 return 0;
             }
         }
@@ -272,52 +332,19 @@ public final class VelocityAccessCommand {
                     ? Command.SINGLE_SUCCESS
                     : 0;
         } catch (AccessGrantScopeValidationException exception) {
-            context.getSource().sendMessage(Component.text(exception.getMessage()));
+            context.getSource().sendMessage(presentation.invalidInput(exception.getMessage()));
             return 0;
         } catch (RuntimeException exception) {
             logger.error("Failed to read access grants for scope {}.", scope, exception);
-            context.getSource().sendMessage(READ_FAILURE_MESSAGE);
+            context.getSource().sendMessage(presentation.readFailure());
             return 0;
         }
     }
 
     private boolean sendListing(CommandSource source, AccessScope scope, List<AccessGrant> grants, int page) {
-        List<AccessGrant> sorted = new ArrayList<>(grants);
-        sorted.sort(GRANT_ORDER);
-
-        if (sorted.isEmpty()) {
-            source.sendMessage(Component.text(
-                    scope == null
-                            ? "No access grants found."
-                            : "No access grants found for " + scope + "."
-            ));
-            return true;
-        }
-
-        int total = sorted.size();
-        int totalPages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        if (page > totalPages) {
-            source.sendMessage(Component.text(
-                    "Page " + page + " is out of range. Available pages: 1-" + totalPages + "."
-            ));
-            return false;
-        }
-
-        String header = scope == null
-                ? "Access grants — page " + page + "/" + totalPages + " — " + total + " total"
-                : "Access grants for " + scope + " — page " + page + "/" + totalPages + " — " + total + " total";
-        source.sendMessage(Component.text(header));
-
-        int fromIndex = (page - 1) * PAGE_SIZE;
-        int toIndex = Math.min(fromIndex + PAGE_SIZE, total);
-        for (int index = fromIndex; index < toIndex; index++) {
-            AccessGrant grant = sorted.get(index);
-            String entry = scope == null
-                    ? (index + 1) + ". " + grant.scope() + " — " + formatIdentity(grant.identity())
-                    : (index + 1) + ". " + formatIdentity(grant.identity());
-            source.sendMessage(Component.text(entry));
-        }
-        return true;
+        AccessListView view = presentation.listing(grants, scope, page);
+        view.lines().forEach(source::sendMessage);
+        return view.successful();
     }
 
     private PlayerIdentity parseIdentity(CommandContext<CommandSource> context, IdentityType identityType) {
@@ -355,7 +382,7 @@ public final class VelocityAccessCommand {
                 case REVOKE -> sendRevokeResult(source, scope, identity);
             }
         } catch (AccessGrantScopeValidationException exception) {
-            source.sendMessage(Component.text(exception.getMessage()));
+            source.sendMessage(presentation.invalidInput(exception.getMessage()));
         } catch (RuntimeException exception) {
             logger.error(
                     "Failed to update access grants for {} {}.",
@@ -363,27 +390,23 @@ public final class VelocityAccessCommand {
                     identity,
                     exception
             );
-            source.sendMessage(MUTATION_FAILURE_MESSAGE);
+            source.sendMessage(presentation.mutationFailure());
         }
     }
 
     private void sendGrantResult(CommandSource source, AccessScope scope, PlayerIdentity identity) {
         AccessGrantAddResult result = administrationService.grant(new AccessGrant(scope, identity));
         switch (result) {
-            case ADDED -> source.sendMessage(Component.text(
-                    "Granted " + scope + " access to " + formatIdentity(identity) + "."
-            ));
-            case ALREADY_EXISTS -> source.sendMessage(Component.text("Access grant already exists."));
+            case ADDED -> source.sendMessage(presentation.added(scope, identity));
+            case ALREADY_EXISTS -> source.sendMessage(presentation.alreadyExists());
         }
     }
 
     private void sendRevokeResult(CommandSource source, AccessScope scope, PlayerIdentity identity) {
         AccessGrantRemoveResult result = administrationService.revoke(scope, identity);
         switch (result) {
-            case REMOVED -> source.sendMessage(Component.text(
-                    "Revoked " + scope + " access from " + formatIdentity(identity) + "."
-            ));
-            case NOT_FOUND -> source.sendMessage(Component.text("No matching access grant exists."));
+            case REMOVED -> source.sendMessage(presentation.removed(scope, identity));
+            case NOT_FOUND -> source.sendMessage(presentation.notFound());
         }
     }
 
@@ -419,21 +442,6 @@ public final class VelocityAccessCommand {
                     .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(remaining))
                     .forEach(builder::suggest);
             return builder.buildFuture();
-        };
-    }
-
-    private static String formatIdentity(PlayerIdentity identity) {
-        return switch (identity.type()) {
-            case OFFLINE -> "OFFLINE " + identity.name();
-            case ONLINE -> "ONLINE " + identity.name() + " (" + identity.verifiedUuid().orElseThrow() + ")";
-        };
-    }
-
-    private static int scopeOrder(AccessScopeType type) {
-        return switch (type) {
-            case NETWORK -> 0;
-            case SERVER_GROUP -> 1;
-            case SERVER -> 2;
         };
     }
 

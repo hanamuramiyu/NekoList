@@ -9,6 +9,7 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import hanamuramiyu.monban.access.PlayerAccessService;
+import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
 import hanamuramiyu.monban.access.backend.BackendAccessPolicyCatalog;
 import hanamuramiyu.monban.access.backend.BackendAdmissionService;
@@ -27,15 +28,18 @@ import hanamuramiyu.monban.config.file.FileMonbanConfigLoader;
 import hanamuramiyu.monban.config.file.FileServerGroupsConfigLoader;
 import hanamuramiyu.monban.deployment.DeploymentMode;
 import hanamuramiyu.monban.identity.PlayerIdentityResolver;
+import hanamuramiyu.monban.identity.OfficialOnlineProfileResolver;
 import hanamuramiyu.monban.storage.file.grant.FileScopedAccessGrantRepository;
 import hanamuramiyu.monban.storage.file.whitelist.FileWhitelistRepository;
 import hanamuramiyu.monban.velocity.backend.VelocityBackendAccessPolicyValidator;
 import hanamuramiyu.monban.velocity.backend.VelocityBackendAdmissionListener;
 import hanamuramiyu.monban.velocity.backend.VelocityBackendScopeValidator;
 import hanamuramiyu.monban.velocity.command.VelocityAccessCommand;
-import hanamuramiyu.monban.velocity.command.VelocityWhitelistCommand;
 import hanamuramiyu.monban.velocity.command.VelocityMonbanCommand;
+import hanamuramiyu.monban.velocity.command.VelocityLookupCommand;
 import hanamuramiyu.monban.velocity.command.VelocityStatusCommand;
+import hanamuramiyu.monban.velocity.command.VelocityNativeWhitelistCommand;
+import hanamuramiyu.monban.velocity.command.VelocityWhitelistCommand;
 import hanamuramiyu.monban.velocity.grant.VelocityAccessGrantScopeValidator;
 import hanamuramiyu.monban.velocity.grant.VelocityScopedAccessGrantValidator;
 import hanamuramiyu.monban.velocity.group.VelocityServerGroupCatalogResolver;
@@ -60,8 +64,10 @@ public final class MonbanVelocityPlugin {
     private final ProxyServer server;
     private final Logger logger;
     private final Path dataDirectory;
+    private final OfficialOnlineProfileResolver profileResolver = new OfficialOnlineProfileResolver();
 
     private MonbanConfig config;
+    private FileMonbanConfigLoader configLoader;
     private PlayerIdentityResolver identityResolver;
     private WhitelistRepository whitelistRepository;
     private AccessGrantRepository scopedAccessGrantRepository;
@@ -71,8 +77,10 @@ public final class MonbanVelocityPlugin {
     private BackendAccessPolicyCatalog backendAccessPolicyCatalog;
     private BackendAdmissionService backendAdmissionService;
     private PlayerAccessService accessService;
+    private WhitelistPolicy whitelistPolicy;
     private VelocityConnectionIdentityRegistry connectionIdentityRegistry;
     private CommandMeta commandMeta;
+    private CommandMeta nativeWhitelistCommandMeta;
 
     @Inject
     public MonbanVelocityPlugin(ProxyServer server, Logger logger, @DataDirectory Path dataDirectory) {
@@ -95,10 +103,11 @@ public final class MonbanVelocityPlugin {
         try {
             Files.createDirectories(dataDirectory);
 
-            loadedConfig = new FileMonbanConfigLoader(
+            FileMonbanConfigLoader loadedConfigLoader = new FileMonbanConfigLoader(
                     dataDirectory.resolve("config.yml"),
                     velocityDefaults()
-            ).load();
+            );
+            loadedConfig = loadedConfigLoader.load();
             if (loadedConfig.deployment().mode() != DeploymentMode.VELOCITY) {
                 throw new IllegalStateException(
                         "Standalone deployment is not supported by the monban Velocity build. "
@@ -125,6 +134,7 @@ public final class MonbanVelocityPlugin {
             new VelocityBackendAccessPolicyValidator(backendScopeValidator).validate(backendPolicies);
 
             PlayerIdentityResolver resolver = new PlayerIdentityResolver(loadedConfig.identity().mode());
+            WhitelistPolicy runtimeWhitelistPolicy = new WhitelistPolicy(loadedConfig.whitelist().enabled());
             WhitelistRepository repository = new FileWhitelistRepository(dataDirectory.resolve("whitelist.yml"));
             AccessGrantRepository scopedRepository = new FileScopedAccessGrantRepository(
                     dataDirectory.resolve("access-grants.yml")
@@ -139,7 +149,9 @@ public final class MonbanVelocityPlugin {
             );
             AccessGrantLookup grantLookup = grantRepository;
             AccessGrantInventory grantInventory = grantRepository;
-            PlayerAccessService playerAccessService = new PlayerAccessService(loadedConfig, resolver, grantLookup);
+            PlayerAccessService playerAccessService = new PlayerAccessService(
+                    loadedConfig, resolver, grantLookup, runtimeWhitelistPolicy
+            );
             BackendAdmissionService backendAdmissionService = new BackendAdmissionService(backendPolicies, grantLookup);
             AccessGrantAdministrationService administrationService = new AccessGrantAdministrationService(
                     grantRepository,
@@ -152,6 +164,7 @@ public final class MonbanVelocityPlugin {
             loadedBackendPolicies = backendPolicies.explicitPolicyCount();
 
             this.config = loadedConfig;
+            this.configLoader = loadedConfigLoader;
             this.identityResolver = resolver;
             this.whitelistRepository = repository;
             this.scopedAccessGrantRepository = scopedRepository;
@@ -161,6 +174,7 @@ public final class MonbanVelocityPlugin {
             this.backendAccessPolicyCatalog = backendPolicies;
             this.backendAdmissionService = backendAdmissionService;
             this.accessService = playerAccessService;
+            this.whitelistPolicy = runtimeWhitelistPolicy;
             this.connectionIdentityRegistry = identityRegistry;
 
             if (loadedConfig.identity().hybrid().enabled()) {
@@ -224,12 +238,15 @@ public final class MonbanVelocityPlugin {
     public void onProxyShutdown(ProxyShutdownEvent event) {
         WhitelistRepository repository = this.whitelistRepository;
         CommandMeta registeredCommandMeta = this.commandMeta;
+        CommandMeta registeredNativeWhitelistCommandMeta = this.nativeWhitelistCommandMeta;
 
         this.commandMeta = null;
+        this.nativeWhitelistCommandMeta = null;
         this.connectionIdentityRegistry = null;
         this.accessGrantAdministrationService = null;
         this.accessGrantRepository = null;
         this.accessService = null;
+        this.whitelistPolicy = null;
         this.backendAdmissionService = null;
         this.backendAccessPolicyCatalog = null;
         this.serverGroupCatalog = null;
@@ -237,12 +254,20 @@ public final class MonbanVelocityPlugin {
         this.whitelistRepository = null;
         this.identityResolver = null;
         this.config = null;
+        this.configLoader = null;
 
         if (registeredCommandMeta != null) {
             try {
                 server.getCommandManager().unregister(registeredCommandMeta);
             } catch (RuntimeException exception) {
                 logger.error("Failed to unregister the monban management command cleanly.", exception);
+            }
+        }
+        if (registeredNativeWhitelistCommandMeta != null) {
+            try {
+                server.getCommandManager().unregister(registeredNativeWhitelistCommandMeta);
+            } catch (RuntimeException exception) {
+                logger.error("Failed to unregister the Velocity whitelist command guard cleanly.", exception);
             }
         }
 
@@ -253,6 +278,7 @@ public final class MonbanVelocityPlugin {
                 logger.error("Failed to close monban whitelist storage cleanly.", exception);
             }
         }
+        profileResolver.close();
     }
 
     private void registerManagementCommand() {
@@ -261,11 +287,15 @@ public final class MonbanVelocityPlugin {
         ServerGroupCatalog resolvedServerGroups = this.serverGroupCatalog;
         BackendAccessPolicyCatalog backendPolicies = this.backendAccessPolicyCatalog;
         AccessGrantAdministrationService administrationService = this.accessGrantAdministrationService;
+        FileMonbanConfigLoader loadedConfigLoader = this.configLoader;
+        WhitelistPolicy runtimeWhitelistPolicy = this.whitelistPolicy;
         if (loadedConfig == null
                 || repository == null
                 || resolvedServerGroups == null
                 || backendPolicies == null
-                || administrationService == null) {
+                || administrationService == null
+                || loadedConfigLoader == null
+                || runtimeWhitelistPolicy == null) {
             throw new IllegalStateException("monban management services are not initialized.");
         }
 
@@ -277,31 +307,66 @@ public final class MonbanVelocityPlugin {
                 administrationService,
                 server,
                 mutationExecutor,
-                logger
+                logger,
+                profileResolver,
+                runtimeWhitelistPolicy,
+                enabled -> loadedConfigLoader.save(new MonbanConfig(
+                        loadedConfig.deployment(),
+                        new WhitelistSettings(enabled),
+                        loadedConfig.identity()
+                ))
+        );
+        VelocityLookupCommand lookupCommand = new VelocityLookupCommand(
+                administrationService,
+                server,
+                mutationExecutor,
+                logger,
+                profileResolver
         );
         VelocityAccessCommand accessCommand = new VelocityAccessCommand(
                 administrationService,
                 resolvedServerGroups,
                 server,
                 mutationExecutor,
-                logger
+                logger,
+                profileResolver
         );
         VelocityStatusCommand statusCommand = new VelocityStatusCommand(
                 loadedConfig,
                 grantInventory,
                 resolvedServerGroups,
                 backendPolicies,
+                runtimeWhitelistPolicy::enabled,
                 server.getConfiguration().isOnlineMode(),
                 logger
         );
-        var command = VelocityMonbanCommand.create(whitelistCommand, accessCommand, statusCommand);
+        var command = VelocityMonbanCommand.create(whitelistCommand, lookupCommand, accessCommand, statusCommand);
         CommandMeta meta = server.getCommandManager()
                 .metaBuilder("monban")
                 .plugin(this)
                 .build();
         server.getCommandManager().register(meta, command);
         this.commandMeta = meta;
+        registerNativeWhitelistCommandGuard();
         logger.info("Registered /monban management command.");
+    }
+
+    private void registerNativeWhitelistCommandGuard() {
+        String[] labels = {"whitelist", "minecraft:whitelist", "bukkit:whitelist"};
+        for (String label : labels) {
+            if (server.getCommandManager().hasCommand(label)) {
+                logger.warn("Cannot intercept /{} because another proxy command already owns that label.", label);
+                return;
+            }
+        }
+
+        CommandMeta meta = server.getCommandManager()
+                .metaBuilder("whitelist")
+                .aliases("minecraft:whitelist", "bukkit:whitelist")
+                .plugin(this)
+                .build();
+        server.getCommandManager().register(meta, new VelocityNativeWhitelistCommand());
+        this.nativeWhitelistCommandMeta = meta;
     }
 
 

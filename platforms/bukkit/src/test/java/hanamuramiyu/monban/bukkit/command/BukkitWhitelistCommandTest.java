@@ -1,6 +1,7 @@
 package hanamuramiyu.monban.bukkit.command;
 
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
+import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.grant.AccessGrant;
 import hanamuramiyu.monban.access.grant.AccessGrantAddResult;
 import hanamuramiyu.monban.access.grant.AccessGrantRemoveResult;
@@ -8,6 +9,8 @@ import hanamuramiyu.monban.access.grant.AccessGrantRepository;
 import hanamuramiyu.monban.access.grant.memory.InMemoryAccessGrantRepository;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.identity.PlayerIdentity;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import org.bukkit.command.CommandSender;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +30,7 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BukkitWhitelistCommandTest {
@@ -44,7 +48,7 @@ class BukkitWhitelistCommandTest {
 
         assertTrue(mutationExecutor.tasks.isEmpty());
         assertEquals(0, repository.addCalls);
-        assertTrue(sender.messagesContain("do not have permission"));
+        assertTrue(sender.messagesContain("Unknown command. Type \"/help\" for help."));
     }
 
     @Test
@@ -62,6 +66,9 @@ class BukkitWhitelistCommandTest {
         assertTrue(repository.delegate.findAll().stream().anyMatch(
                 grant -> grant.identity().verifiedUuid().filter(VERIFIED_UUID::equals).isPresent()
         ));
+        assertTrue(sender.messagesContain("Added [OFFLINE] hanamuramiyu"));
+        assertTrue(sender.messagesContain("Added [ONLINE] hanamuramiyu"));
+        assertFalse(sender.messagesContain(VERIFIED_UUID.toString()));
 
         command.execute(sender.sender(), new String[]{"remove", "offline", "hanamuramiyu"});
         command.execute(sender.sender(), new String[]{"remove", "online", "hanamuramiyu_new", VERIFIED_UUID.toString()});
@@ -95,11 +102,11 @@ class BukkitWhitelistCommandTest {
         assertEquals(1, mutationExecutor.tasks.size());
         mutationExecutor.tasks.removeFirst().run();
         assertEquals(1, repository.addCalls);
-        assertTrue(sender.messagesContain("Added OFFLINE hanamuramiyu"));
+        assertTrue(sender.messagesContain("Added [OFFLINE] hanamuramiyu"));
     }
 
     @Test
-    void listFiltersPaginatesAndNeverDisplaysOfflineTechnicalUuid() {
+    void listFiltersPaginatesAndNeverDisplaysFullUuid() {
         RecordingRepository repository = new RecordingRepository();
         repository.seed(new AccessGrant(AccessScope.network(), PlayerIdentity.online("hanamuramiyu9", VERIFIED_UUID)));
         repository.seed(new AccessGrant(AccessScope.network(), PlayerIdentity.offline("hanamuramiyu", TECHNICAL_UUID)));
@@ -113,20 +120,21 @@ class BukkitWhitelistCommandTest {
         RecordingSender all = new RecordingSender(BukkitWhitelistCommand.PERMISSION);
 
         command.execute(all.sender(), new String[]{"list", "2"});
-        assertTrue(all.messagesContain("Whitelist — page 2/2"));
-        assertTrue(all.messagesContain("3 entries shown — 13 total"));
+        assertTrue(all.messagesContain("page 2/2"));
+        assertTrue(all.messagesContain("11–13 of 13"));
         assertFalse(all.messagesContain(TECHNICAL_UUID.toString()));
 
         RecordingSender online = new RecordingSender(BukkitWhitelistCommand.PERMISSION);
         command.execute(online.sender(), new String[]{"list", "online"});
-        assertTrue(online.messagesContain("Whitelist (ONLINE) — page 1/1"));
-        assertTrue(online.messagesContain(VERIFIED_UUID.toString()));
-        assertFalse(online.messagesContain("OFFLINE"));
+        assertTrue(online.messagesContain("[ONLINE]"));
+        assertTrue(online.messagesContain("00000000…0001"));
+        assertFalse(online.messagesContain(VERIFIED_UUID.toString()));
+        assertFalse(online.messagesContain("[OFFLINE]"));
 
         RecordingSender offline = new RecordingSender(BukkitWhitelistCommand.PERMISSION);
         command.execute(offline.sender(), new String[]{"list", "offline", "2"});
-        assertTrue(offline.messagesContain("Whitelist (OFFLINE) — page 2/2"));
-        assertFalse(offline.messagesContain("ONLINE"));
+        assertTrue(offline.messagesContain("page 2/2"));
+        assertFalse(offline.messagesContain("[ONLINE]"));
     }
 
     @Test
@@ -175,6 +183,68 @@ class BukkitWhitelistCommandTest {
         assertFalse(sender.messagesContain("/secret/whitelist.yml"));
     }
 
+    @Test
+    void enableAndDisablePersistBeforeChangingPolicy() {
+        RecordingRepository repository = new RecordingRepository();
+        RecordingExecutor mutationExecutor = new RecordingExecutor();
+        WhitelistPolicy policy = new WhitelistPolicy(false);
+        List<Boolean> persisted = new ArrayList<>();
+        BukkitWhitelistCommand command = command(
+                repository,
+                mutationExecutor,
+                new RecordingLogger(),
+                policy,
+                persisted::add
+        );
+        RecordingSender sender = new RecordingSender(BukkitWhitelistCommand.PERMISSION);
+
+        command.execute(sender.sender(), new String[]{"enable"});
+        assertFalse(policy.enabled());
+        mutationExecutor.tasks.removeFirst().run();
+        assertTrue(policy.enabled());
+        assertEquals(List.of(true), persisted);
+        assertTrue(sender.messagesContain("The monban whitelist is now enabled."));
+
+        command.execute(sender.sender(), new String[]{"enable"});
+        mutationExecutor.tasks.removeFirst().run();
+        assertEquals(List.of(true), persisted);
+        assertTrue(sender.messagesContain("The monban whitelist is already enabled."));
+
+        command.execute(sender.sender(), new String[]{"disable"});
+        mutationExecutor.tasks.removeFirst().run();
+        assertFalse(policy.enabled());
+        assertEquals(List.of(true, false), persisted);
+        assertTrue(sender.messagesContain("The monban whitelist is now disabled."));
+    }
+
+    @Test
+    void failedPolicyPersistenceLeavesPolicyUnchanged() {
+        RecordingRepository repository = new RecordingRepository();
+        RecordingExecutor mutationExecutor = new RecordingExecutor();
+        WhitelistPolicy policy = new WhitelistPolicy(false);
+        IllegalStateException failure = new IllegalStateException("failed at /secret/config.yml");
+        RecordingLogger logger = new RecordingLogger();
+        BukkitWhitelistCommand command = command(
+                repository,
+                mutationExecutor,
+                logger,
+                policy,
+                enabled -> {
+                    throw failure;
+                }
+        );
+        RecordingSender sender = new RecordingSender(BukkitWhitelistCommand.PERMISSION);
+
+        command.execute(sender.sender(), new String[]{"enable"});
+        mutationExecutor.tasks.removeFirst().run();
+
+        assertFalse(policy.enabled());
+        assertEquals(1, logger.throwableRecords);
+        assertSame(failure, logger.lastThrowable);
+        assertTrue(sender.messagesContain("Failed to update the whitelist policy. Check the server log."));
+        assertFalse(sender.messagesContain("/secret/config.yml"));
+    }
+
     private static BukkitWhitelistCommand command(
             RecordingRepository repository,
             Executor mutationExecutor,
@@ -184,7 +254,27 @@ class BukkitWhitelistCommandTest {
                 new AccessGrantAdministrationService(repository, scope -> {}),
                 mutationExecutor,
                 ignored -> Runnable::run,
+                (sender, component) -> sender.sendMessage(visibleText(component)),
                 logger
+        );
+    }
+
+    private static BukkitWhitelistCommand command(
+            RecordingRepository repository,
+            Executor mutationExecutor,
+            Logger logger,
+            WhitelistPolicy policy,
+            BukkitWhitelistCommand.WhitelistStateStore stateStore
+    ) {
+        return new BukkitWhitelistCommand(
+                new AccessGrantAdministrationService(repository, scope -> {}),
+                mutationExecutor,
+                ignored -> Runnable::run,
+                (sender, component) -> sender.sendMessage(visibleText(component)),
+                logger,
+                hanamuramiyu.monban.identity.OnlineProfileResolver.unavailable(),
+                policy,
+                stateStore
         );
     }
 
@@ -199,6 +289,19 @@ class BukkitWhitelistCommandTest {
         if (type == double.class) return 0D;
         if (type == char.class) return '\0';
         return null;
+    }
+
+    private static String visibleText(Component component) {
+        StringBuilder builder = new StringBuilder();
+        appendVisibleText(component, builder);
+        return builder.toString();
+    }
+
+    private static void appendVisibleText(Component component, StringBuilder builder) {
+        if (component instanceof TextComponent text) {
+            builder.append(text.content());
+        }
+        component.children().forEach(child -> appendVisibleText(child, builder));
     }
 
     private static final class RecordingSender {
@@ -216,8 +319,13 @@ class BukkitWhitelistCommandTest {
                     (proxy, method, args) -> switch (method.getName()) {
                         case "hasPermission" -> permissions.contains((String) args[0]);
                         case "sendMessage" -> {
-                            if (args != null && args.length > 0 && args[0] instanceof String message) {
-                                messages.add(message);
+                            if (args != null) {
+                                for (Object arg : args) {
+                                    if (arg instanceof String message) {
+                                        messages.add(message);
+                                        break;
+                                    }
+                                }
                             }
                             yield null;
                         }
@@ -244,6 +352,7 @@ class BukkitWhitelistCommandTest {
 
     private static final class RecordingLogger extends Logger {
         private int throwableRecords;
+        private Throwable lastThrowable;
 
         private RecordingLogger() {
             super("BukkitWhitelistCommandTest", null);
@@ -254,6 +363,7 @@ class BukkitWhitelistCommandTest {
                 public void publish(LogRecord record) {
                     if (record.getThrown() != null) {
                         throwableRecords++;
+                        lastThrowable = record.getThrown();
                     }
                 }
 

@@ -6,6 +6,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import org.slf4j.Logger;
 
 import java.lang.reflect.Proxy;
@@ -90,6 +91,19 @@ final class VelocityCommandTestSupport {
         return null;
     }
 
+    private static String visibleText(Component component) {
+        StringBuilder builder = new StringBuilder();
+        appendVisibleText(component, builder);
+        return builder.toString();
+    }
+
+    private static void appendVisibleText(Component component, StringBuilder builder) {
+        if (component instanceof TextComponent text) {
+            builder.append(text.content());
+        }
+        component.children().forEach(child -> appendVisibleText(child, builder));
+    }
+
     static final class RecordingExecutor implements Executor {
         final ArrayDeque<Runnable> tasks = new ArrayDeque<>();
 
@@ -107,6 +121,7 @@ final class VelocityCommandTestSupport {
             this.permissions = allowAllMonbanCommands
                     ? Set.of(
                             VelocityWhitelistCommand.PERMISSION,
+                            VelocityLookupCommand.PERMISSION,
                             VelocityAccessCommand.PERMISSION,
                             VelocityStatusCommand.PERMISSION
                     )
@@ -125,7 +140,7 @@ final class VelocityCommandTestSupport {
                         case "hasPermission" -> permissions.contains((String) args[0]);
                         case "sendMessage" -> {
                             if (args != null && args.length > 0 && args[0] instanceof Component component) {
-                                messages.add(component.toString());
+                                messages.add(visibleText(component));
                             }
                             yield null;
                         }

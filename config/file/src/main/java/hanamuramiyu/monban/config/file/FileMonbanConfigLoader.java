@@ -152,7 +152,21 @@ public final class FileMonbanConfigLoader {
         return config;
     }
 
+    public void save(MonbanConfig config) throws IOException {
+        Objects.requireNonNull(config, "config");
+        validateHybridConfiguration(config);
+        writeAtomically(serializeConfig(config));
+    }
+
     private void createDefaultFile() throws IOException {
+        writeAtomically(serializeCreationDefaults(), false);
+    }
+
+    private void writeAtomically(String content) throws IOException {
+        writeAtomically(content, true);
+    }
+
+    private void writeAtomically(String content, boolean replaceExisting) throws IOException {
         Path parent = file.getParent();
         if (parent != null) {
             Files.createDirectories(parent);
@@ -161,7 +175,7 @@ public final class FileMonbanConfigLoader {
         Path temporary = Files.createTempFile(parent, file.getFileName().toString() + ".", ".tmp");
         boolean moved = false;
         try {
-            byte[] bytes = serializeCreationDefaults().getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
             try (FileChannel channel = FileChannel.open(
                     temporary,
                     StandardOpenOption.WRITE,
@@ -175,9 +189,17 @@ public final class FileMonbanConfigLoader {
             }
 
             try {
-                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE);
+                if (replaceExisting) {
+                    Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } else {
+                    Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE);
+                }
             } catch (AtomicMoveNotSupportedException exception) {
-                Files.move(temporary, file);
+                if (replaceExisting) {
+                    Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+                } else {
+                    Files.move(temporary, file);
+                }
             }
             moved = true;
         } finally {
@@ -188,7 +210,11 @@ public final class FileMonbanConfigLoader {
     }
 
     private String serializeCreationDefaults() {
-        return switch (creationDefaults.deployment().mode()) {
+        return serializeConfig(creationDefaults);
+    }
+
+    private String serializeConfig(MonbanConfig config) {
+        return switch (config.deployment().mode()) {
             case STANDALONE -> """
                     config-version: %d
                     deployment:
@@ -199,8 +225,8 @@ public final class FileMonbanConfigLoader {
                       mode: %s
                     """.formatted(
                     CONFIG_VERSION,
-                    creationDefaults.whitelist().enabled(),
-                    creationDefaults.identity().mode().name()
+                    config.whitelist().enabled(),
+                    config.identity().mode().name()
             );
             case VELOCITY -> """
                     config-version: %d
@@ -215,10 +241,10 @@ public final class FileMonbanConfigLoader {
                         dual-entry-preference: %s
                     """.formatted(
                     CONFIG_VERSION,
-                    creationDefaults.whitelist().enabled(),
-                    creationDefaults.identity().mode().name(),
-                    creationDefaults.identity().hybrid().enabled(),
-                    creationDefaults.identity().hybrid().dualEntryPreference().name()
+                    config.whitelist().enabled(),
+                    config.identity().mode().name(),
+                    config.identity().hybrid().enabled(),
+                    config.identity().hybrid().dualEntryPreference().name()
             );
         };
     }

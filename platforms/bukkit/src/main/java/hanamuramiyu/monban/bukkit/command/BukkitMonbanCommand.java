@@ -4,6 +4,8 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import hanamuramiyu.monban.bukkit.presentation.BukkitAdventureSender;
+import hanamuramiyu.monban.presentation.HelpPresentation;
 
 import java.util.Arrays;
 import java.util.List;
@@ -11,6 +13,7 @@ import java.util.Objects;
 
 public final class BukkitMonbanCommand implements CommandExecutor, TabCompleter {
     private final BukkitWhitelistCommand whitelistCommand;
+    private final HelpPresentation help = new HelpPresentation();
 
     public BukkitMonbanCommand(BukkitWhitelistCommand whitelistCommand) {
         this.whitelistCommand = Objects.requireNonNull(whitelistCommand, "whitelistCommand");
@@ -27,11 +30,8 @@ public final class BukkitMonbanCommand implements CommandExecutor, TabCompleter 
             return whitelistCommand.execute(sender, Arrays.copyOfRange(args, 1, args.length));
         }
 
-        if (sender.hasPermission(BukkitWhitelistCommand.PERMISSION)) {
-            sender.sendMessage("Usage: /monban whitelist ...");
-        } else {
-            sender.sendMessage("No monban subcommands are available to you.");
-        }
+        help.lines(sender.hasPermission(BukkitWhitelistCommand.PERMISSION), false, false, false)
+                .forEach(component -> BukkitAdventureSender.send(sender, component));
         return true;
     }
 

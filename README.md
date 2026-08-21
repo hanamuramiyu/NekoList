@@ -44,9 +44,15 @@ monban plugin bytecode targets Java 21. Server runtime requirements are platform
 2. Put the JAR in the platform's `plugins/` directory.
 3. For standalone Bukkit/Spigot or Paper/Folia, set the native Minecraft whitelist to `white-list=false`.
 4. Start the server once, configure `plugins/monban/config.yml`, then restart.
-5. Manage the global whitelist with `/monban whitelist ...`. Velocity additionally provides `/monban access ...` and `/monban status`.
+5. Manage the global whitelist with `/monban whitelist ...`; `enable` and `disable` can be used at runtime. Velocity additionally provides `/monban lookup ...`, `/monban access ...`, and `/monban status`.
 
 Full setup, configuration, command, storage, and Velocity documentation is available at **[monban.miyu.pw](https://monban.miyu.pw/)**.
+
+## Building
+
+```bash
+./gradlew clean build
+```
 
 ## License
 

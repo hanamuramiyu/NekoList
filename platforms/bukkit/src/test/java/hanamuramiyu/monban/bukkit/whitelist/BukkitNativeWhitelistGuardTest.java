@@ -30,7 +30,7 @@ class BukkitNativeWhitelistGuardTest {
 
     @Test
     void playerNativeWhitelistCommandIsRecognizedWithReplacementGuidance() {
-        RecordingSender state = new RecordingSender();
+        RecordingSender state = new RecordingSender(true);
 
         assertTrue(BukkitNativeWhitelistGuard.isNativeWhitelistCommand(
                 "/minecraft:whitelist add hanamuramiyu"
@@ -42,7 +42,7 @@ class BukkitNativeWhitelistGuardTest {
 
     @Test
     void consoleNativeWhitelistCommandIsRecognizedWithReplacementGuidance() {
-        RecordingSender state = new RecordingSender();
+        RecordingSender state = new RecordingSender(true);
 
         assertTrue(BukkitNativeWhitelistGuard.isNativeWhitelistCommand(
                 "bukkit:whitelist list"
@@ -50,6 +50,16 @@ class BukkitNativeWhitelistGuardTest {
         BukkitNativeWhitelistGuard.sendBlockedMessage(state.sender());
 
         assertTrue(state.messagesContain("vanilla Minecraft whitelist is disabled"));
+    }
+
+    @Test
+    void nativeWhitelistWithoutPermissionLooksLikeUnknownCommand() {
+        RecordingSender state = new RecordingSender();
+
+        BukkitNativeWhitelistGuard.sendBlockedMessage(state.player());
+
+        assertTrue(state.messagesContain("Unknown command. Type \"/help\" for help."));
+        assertFalse(state.messagesContain("monban whitelist"));
     }
 
     @Test
@@ -110,7 +120,16 @@ class BukkitNativeWhitelistGuardTest {
     }
 
     private static final class RecordingSender {
+        private final boolean permission;
         private final List<String> messages = new ArrayList<>();
+
+        private RecordingSender() {
+            this(false);
+        }
+
+        private RecordingSender(boolean permission) {
+            this.permission = permission;
+        }
 
         private CommandSender sender() {
             return proxy(CommandSender.class);
@@ -126,6 +145,7 @@ class BukkitNativeWhitelistGuardTest {
                     type.getClassLoader(),
                     new Class<?>[]{type},
                     (proxy, method, args) -> switch (method.getName()) {
+                        case "hasPermission" -> permission;
                         case "sendMessage" -> {
                             if (args != null && args.length > 0 && args[0] instanceof String message) {
                                 messages.add(message);

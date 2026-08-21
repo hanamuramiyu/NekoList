@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":presentation"))
     implementation(project(":config:file"))
     implementation(project(":storage:file"))
     compileOnly("io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT")

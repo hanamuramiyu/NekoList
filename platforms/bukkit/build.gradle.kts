@@ -1,5 +1,6 @@
 import org.apache.tools.ant.filters.ReplaceTokens
 import org.gradle.api.GradleException
+import org.gradle.api.file.DuplicatesStrategy
 import java.util.zip.ZipFile
 
 plugins {
@@ -20,8 +21,10 @@ repositories {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":presentation"))
     implementation(project(":config:file"))
     implementation(project(":storage:file"))
+    implementation("net.kyori:adventure-text-serializer-gson:4.17.0")
     compileOnly("org.spigotmc:spigot-api:1.21-R0.1-SNAPSHOT")
 
     testImplementation(platform("org.junit:junit-bom:6.1.2"))
@@ -75,6 +78,15 @@ val verifyDistributionJar by tasks.registering {
             if (count("hanamuramiyu/monban/internal/libs/snakeyaml/Yaml.class") != 1) {
                 throw GradleException("Bukkit/Spigot distribution must contain relocated SnakeYAML exactly once.")
             }
+            if (entries.any { it.startsWith("net/kyori/") }) {
+                throw GradleException("Bukkit/Spigot distribution contains unrelocated Adventure classes.")
+            }
+            if (count("hanamuramiyu/monban/internal/libs/adventure/adventure/text/Component.class") != 1) {
+                throw GradleException("Bukkit/Spigot distribution must contain relocated Adventure exactly once.")
+            }
+            if (entries.any { it.startsWith("com/google/gson/") }) {
+                throw GradleException("Bukkit/Spigot distribution contains unrelocated Gson classes.")
+            }
         }
     }
 }
@@ -96,6 +108,12 @@ tasks {
     shadowJar {
         archiveFileName.set("monban-bukkit-spigot-${project.version}.jar")
         relocate("org.yaml.snakeyaml", "hanamuramiyu.monban.internal.libs.snakeyaml")
+        relocate("net.kyori", "hanamuramiyu.monban.internal.libs.adventure")
+        relocate("com.google.gson", "hanamuramiyu.monban.internal.libs.gson")
+        filesMatching("META-INF/services/**") {
+            duplicatesStrategy = DuplicatesStrategy.INCLUDE
+        }
+        mergeServiceFiles()
     }
 
     assemble {

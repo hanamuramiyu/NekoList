@@ -3,6 +3,7 @@ package hanamuramiyu.monban.velocity.command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.velocitypowered.api.command.CommandSource;
+import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.backend.BackendAccessMode;
 import hanamuramiyu.monban.access.backend.BackendAccessPolicyCatalog;
 import hanamuramiyu.monban.access.grant.AccessGrant;
@@ -19,6 +20,7 @@ import hanamuramiyu.monban.config.WhitelistSettings;
 import hanamuramiyu.monban.deployment.DeploymentMode;
 import hanamuramiyu.monban.identity.IdentityResolutionMode;
 import hanamuramiyu.monban.identity.PlayerIdentity;
+import hanamuramiyu.monban.velocity.MonbanVelocityPluginMetadata;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 
@@ -129,7 +131,7 @@ class VelocityStatusCommandTest {
         assertEquals(1, harness.dispatcher.execute("status", source.source()));
 
         assertEquals(1, inventory.findAllCalls);
-        assertTrue(source.messagesContain("monban 3.0.0 — Velocity status"));
+        assertTrue(source.messagesContain("monban " + MonbanVelocityPluginMetadata.VERSION + " — Velocity status"));
         assertTrue(source.messagesContain("Deployment: VELOCITY"));
         assertTrue(source.messagesContain("Access grants: 9 total — NETWORK 2, SERVER_GROUP 3, SERVER 4"));
         assertTrue(source.messagesContain("Server groups: 2"));
@@ -155,6 +157,31 @@ class VelocityStatusCommandTest {
 
         assertEquals(1, harness.dispatcher.execute("status", source.source()));
         assertEquals(1, inventory.findAllCalls);
+    }
+
+    @Test
+    void statusReadsCurrentRuntimeWhitelistPolicy() throws Exception {
+        WhitelistPolicy policy = new WhitelistPolicy(false);
+        RecordingInventory inventory = new RecordingInventory(List.of());
+        VelocityStatusCommand command = new VelocityStatusCommand(
+                config(false, false, HybridIdentityPreference.ONLINE),
+                inventory,
+                new ServerGroupCatalog(List.of()),
+                policies(),
+                policy::enabled,
+                false,
+                new RecordingLogger().logger()
+        );
+        CommandDispatcher<CommandSource> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(command.build().build());
+        RecordingCommandSource source = new RecordingCommandSource(VelocityStatusCommand.PERMISSION);
+
+        assertEquals(1, dispatcher.execute("status", source.source()));
+        assertTrue(source.messagesContain("Whitelist: disabled"));
+
+        policy.setEnabled(true);
+        assertEquals(1, dispatcher.execute("status", source.source()));
+        assertTrue(source.messagesContain("Whitelist: enabled"));
     }
 
     @Test

@@ -4,7 +4,7 @@ plugins {
 
 allprojects {
     group = "hanamuramiyu.monban"
-    version = "3.0.0"
+version = "3.1.0"
 }
 
 subprojects {
@@ -17,6 +17,7 @@ subprojects {
 tasks.build {
     dependsOn(
         ":common:build",
+        ":presentation:build",
         ":config:file:build",
         ":storage:file:build",
         ":platforms:bukkit:build",

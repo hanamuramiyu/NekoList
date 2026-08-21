@@ -1,30 +1,36 @@
 package hanamuramiyu.monban.paper.command;
 
 import com.mojang.brigadier.Command;
-import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
+import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.admin.AccessGrantScopeValidationException;
 import hanamuramiyu.monban.access.grant.AccessGrant;
 import hanamuramiyu.monban.access.grant.AccessGrantAddResult;
 import hanamuramiyu.monban.access.grant.AccessGrantRemoveResult;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.identity.IdentityType;
+import hanamuramiyu.monban.identity.OnlineProfile;
+import hanamuramiyu.monban.identity.OnlineProfileResolutionException;
+import hanamuramiyu.monban.identity.OnlineProfileResolver;
 import hanamuramiyu.monban.identity.PlayerIdentity;
+import hanamuramiyu.monban.presentation.WhitelistListView;
+import hanamuramiyu.monban.presentation.WhitelistPresentation;
+import hanamuramiyu.monban.presentation.MonbanUi;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
+import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,45 +38,122 @@ import java.util.logging.Logger;
 public final class PaperWhitelistCommand {
     public static final String PERMISSION = "monban.command.whitelist";
 
-    private static final int PAGE_SIZE = 10;
     private static final AccessScope NETWORK_SCOPE = AccessScope.network();
-    private static final String MUTATION_FAILURE_MESSAGE =
-            "Failed to update the monban whitelist. Check the server log.";
-    private static final String READ_FAILURE_MESSAGE =
-            "Failed to read the monban whitelist. Check the server log.";
-
-    private static final Comparator<AccessGrant> WHITELIST_ORDER = Comparator
-            .comparing((AccessGrant grant) -> grant.identity().type().name())
-            .thenComparing(grant -> grant.identity().normalizedName())
-            .thenComparing(grant -> grant.identity().verifiedUuid().map(UUID::toString).orElse(""));
 
     private final AccessGrantAdministrationService administrationService;
     private final Executor mutationExecutor;
     private final Function<CommandSender, Executor> callbackExecutor;
+    private final BiConsumer<CommandSender, Component> messageSender;
     private final Logger logger;
+    private final OnlineProfileResolver profileResolver;
+    private final WhitelistPolicy whitelistPolicy;
+    private final WhitelistStateStore whitelistStateStore;
+    private final WhitelistPresentation presentation = new WhitelistPresentation();
 
     public PaperWhitelistCommand(
             AccessGrantAdministrationService administrationService,
             Executor mutationExecutor,
             Function<CommandSender, Executor> callbackExecutor,
+            BiConsumer<CommandSender, Component> messageSender,
             Logger logger
+    ) {
+        this(administrationService, mutationExecutor, callbackExecutor, messageSender, logger,
+                OnlineProfileResolver.unavailable(), new WhitelistPolicy(false), enabled -> {
+                });
+    }
+
+    public PaperWhitelistCommand(
+            AccessGrantAdministrationService administrationService,
+            Executor mutationExecutor,
+            Function<CommandSender, Executor> callbackExecutor,
+            BiConsumer<CommandSender, Component> messageSender,
+            Logger logger,
+            OnlineProfileResolver profileResolver
+    ) {
+        this(administrationService, mutationExecutor, callbackExecutor, messageSender, logger,
+                profileResolver, new WhitelistPolicy(false), enabled -> {
+                });
+    }
+
+    public PaperWhitelistCommand(
+            AccessGrantAdministrationService administrationService,
+            Executor mutationExecutor,
+            Function<CommandSender, Executor> callbackExecutor,
+            BiConsumer<CommandSender, Component> messageSender,
+            Logger logger,
+            OnlineProfileResolver profileResolver,
+            WhitelistPolicy whitelistPolicy,
+            WhitelistStateStore whitelistStateStore
     ) {
         this.administrationService = Objects.requireNonNull(administrationService, "administrationService");
         this.mutationExecutor = Objects.requireNonNull(mutationExecutor, "mutationExecutor");
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
+        this.messageSender = Objects.requireNonNull(messageSender, "messageSender");
         this.logger = Objects.requireNonNull(logger, "logger");
+        this.profileResolver = Objects.requireNonNull(profileResolver, "profileResolver");
+        this.whitelistPolicy = Objects.requireNonNull(whitelistPolicy, "whitelistPolicy");
+        this.whitelistStateStore = Objects.requireNonNull(whitelistStateStore, "whitelistStateStore");
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> build() {
         return Commands.literal("whitelist")
-                .requires(source -> source.getSender().hasPermission(PERMISSION))
+                .executes(context -> {
+                    CommandSender sender = context.getSource().getSender();
+                    if (!sender.hasPermission(PERMISSION)) {
+                        send(sender, new MonbanUi().unknownCommand());
+                    } else {
+                        sendAll(sender, presentation.usage());
+                    }
+                    return Command.SINGLE_SUCCESS;
+                })
                 .then(mutationBranch("add", Mutation.ADD))
                 .then(mutationBranch("remove", Mutation.REMOVE))
+                .then(policyBranch("enable", true))
+                .then(policyBranch("disable", false))
                 .then(listBranch());
     }
 
+    private LiteralArgumentBuilder<CommandSourceStack> policyBranch(String literal, boolean enabled) {
+        return Commands.literal(literal)
+                .requires(source -> source.getSender().hasPermission(PERMISSION))
+                .executes(context -> executePolicy(context.getSource().getSender(), enabled));
+    }
+
+    private int executePolicy(CommandSender sender, boolean enabled) {
+        try {
+            mutationExecutor.execute(() -> runPolicyUpdate(sender, enabled));
+        } catch (RuntimeException exception) {
+            logger.log(Level.SEVERE, "Failed to schedule monban whitelist policy update.", exception);
+            send(sender, presentation.policyUpdateFailure(WhitelistPresentation.LogTarget.SERVER));
+            return 0;
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private void runPolicyUpdate(CommandSender sender, boolean enabled) {
+        synchronized (whitelistPolicy) {
+            if (whitelistPolicy.enabled() == enabled) {
+                dispatchCallback(sender, () -> send(sender,
+                        enabled ? presentation.alreadyEnabled() : presentation.alreadyDisabled()));
+                return;
+            }
+            try {
+                whitelistStateStore.save(enabled);
+                whitelistPolicy.setEnabled(enabled);
+            } catch (Exception exception) {
+                logger.log(Level.SEVERE, "Failed to persist monban whitelist policy.", exception);
+                dispatchCallback(sender, () -> send(sender,
+                        presentation.policyUpdateFailure(WhitelistPresentation.LogTarget.SERVER)));
+                return;
+            }
+            dispatchCallback(sender, () -> send(sender,
+                    enabled ? presentation.enabled() : presentation.disabled()));
+        }
+    }
+
     private LiteralArgumentBuilder<CommandSourceStack> mutationBranch(String literal, Mutation mutation) {
-        LiteralArgumentBuilder<CommandSourceStack> branch = Commands.literal(literal);
+        LiteralArgumentBuilder<CommandSourceStack> branch = Commands.literal(literal)
+                .requires(source -> source.getSender().hasPermission(PERMISSION));
         addIdentityBranches(branch, mutation);
         return branch;
     }
@@ -82,12 +165,14 @@ public final class PaperWhitelistCommand {
 
         parent.then(Commands.literal("online")
                 .then(Commands.argument("name", StringArgumentType.word())
+                        .executes(context -> executeAutomaticMutation(context, mutation))
                         .then(Commands.argument("uuid", StringArgumentType.word())
                                 .executes(context -> executeMutation(context, mutation, IdentityType.ONLINE)))));
     }
 
     private LiteralArgumentBuilder<CommandSourceStack> listBranch() {
         LiteralArgumentBuilder<CommandSourceStack> list = Commands.literal("list")
+                .requires(source -> source.getSender().hasPermission(PERMISSION))
                 .executes(context -> executeList(context, null, 1));
         list.then(pageArgument(null));
         list.then(identityListBranch("offline", IdentityType.OFFLINE));
@@ -102,12 +187,12 @@ public final class PaperWhitelistCommand {
         return branch;
     }
 
-    private RequiredArgumentBuilder<CommandSourceStack, Integer> pageArgument(IdentityType filter) {
-        return Commands.argument("page", IntegerArgumentType.integer(1))
+    private RequiredArgumentBuilder<CommandSourceStack, String> pageArgument(IdentityType filter) {
+        return Commands.argument("page", StringArgumentType.word())
                 .executes(context -> executeList(
                         context,
                         filter,
-                        IntegerArgumentType.getInteger(context, "page")
+                        StringArgumentType.getString(context, "page")
                 ));
     }
 
@@ -121,7 +206,7 @@ public final class PaperWhitelistCommand {
         try {
             identity = parseIdentity(context, identityType);
         } catch (CommandInputException exception) {
-            sender.sendMessage(exception.getMessage());
+            send(sender, exception.component());
             return 0;
         }
 
@@ -129,30 +214,81 @@ public final class PaperWhitelistCommand {
             mutationExecutor.execute(() -> runMutation(sender, mutation, identity));
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to schedule monban whitelist mutation.", exception);
-            sender.sendMessage(MUTATION_FAILURE_MESSAGE);
+            send(sender, presentation.mutationFailure(WhitelistPresentation.LogTarget.SERVER));
             return 0;
         }
         return Command.SINGLE_SUCCESS;
     }
 
+    private int executeAutomaticMutation(
+            CommandContext<CommandSourceStack> context,
+            Mutation mutation
+    ) {
+        CommandSender sender = context.getSource().getSender();
+        String name = StringArgumentType.getString(context, "name");
+        try {
+            PlayerIdentity.offline(name);
+        } catch (IllegalArgumentException exception) {
+            send(sender, presentation.invalidPlayerName(name));
+            return 0;
+        }
+        try {
+            mutationExecutor.execute(() -> {
+                try {
+                    OnlineProfile profile = profileResolver.resolve(name).toCompletableFuture().join();
+                    runMutation(sender, mutation, profile.identity());
+                } catch (RuntimeException exception) {
+                    Throwable cause = exception.getCause() instanceof OnlineProfileResolutionException resolved
+                            ? resolved
+                            : exception;
+                    dispatchCallback(sender, () -> send(sender,
+                            cause instanceof OnlineProfileResolutionException resolved
+                                    && resolved.kind() == OnlineProfileResolutionException.Kind.NOT_FOUND
+                                    ? presentation.onlineProfileNotFound()
+                                    : cause instanceof OnlineProfileResolutionException
+                                    ? presentation.onlineProfileUnavailable()
+                                    : presentation.mutationFailure(WhitelistPresentation.LogTarget.SERVER)));
+                    if (!(cause instanceof OnlineProfileResolutionException)) {
+                        logger.log(Level.SEVERE, "Failed to resolve online profile for " + name + ".", exception);
+                    }
+                }
+            });
+        } catch (RuntimeException exception) {
+            logger.log(Level.SEVERE, "Failed to schedule online profile lookup.", exception);
+            send(sender, presentation.onlineProfileUnavailable());
+            return 0;
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private int executeList(CommandContext<CommandSourceStack> context, IdentityType filter, String pageValue) {
+        CommandSender sender = context.getSource().getSender();
+        int page;
+        try {
+            page = parsePage(pageValue);
+        } catch (CommandInputException exception) {
+            send(sender, exception.component());
+            return 0;
+        }
+        return executeList(context, filter, page);
+    }
+
     private int executeList(CommandContext<CommandSourceStack> context, IdentityType filter, int page) {
         CommandSender sender = context.getSource().getSender();
         try {
-            List<AccessGrant> grants = administrationService.findAll(NETWORK_SCOPE);
-            if (filter != null) {
-                grants = grants.stream()
-                        .filter(grant -> grant.identity().type() == filter)
-                        .toList();
-            }
-            return sendListing(sender, filter, grants, page)
-                    ? Command.SINGLE_SUCCESS
-                    : 0;
+            WhitelistListView view = presentation.listing(
+                    administrationService.findAll(NETWORK_SCOPE),
+                    filter,
+                    page
+            );
+            sendAll(sender, view.lines());
+            return view.successful() ? Command.SINGLE_SUCCESS : 0;
         } catch (AccessGrantScopeValidationException exception) {
-            sender.sendMessage(exception.getMessage());
+            send(sender, presentation.validationFailure(exception.getMessage()));
             return 0;
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to read the monban whitelist.", exception);
-            sender.sendMessage(READ_FAILURE_MESSAGE);
+            send(sender, presentation.readFailure(WhitelistPresentation.LogTarget.SERVER));
             return 0;
         }
     }
@@ -170,7 +306,7 @@ public final class PaperWhitelistCommand {
         } catch (CommandInputException exception) {
             throw exception;
         } catch (IllegalArgumentException exception) {
-            throw new CommandInputException("Invalid Minecraft player name: " + name + ".", exception);
+            throw new CommandInputException(presentation.invalidPlayerName(name), exception);
         }
     }
 
@@ -179,7 +315,19 @@ public final class PaperWhitelistCommand {
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException exception) {
-            throw new CommandInputException("Invalid UUID: " + value + ".", exception);
+            throw new CommandInputException(presentation.invalidUuid(value), exception);
+        }
+    }
+
+    private int parsePage(String value) {
+        try {
+            int page = Integer.parseInt(value);
+            if (page < 1) {
+                throw new NumberFormatException("page must be positive");
+            }
+            return page;
+        } catch (NumberFormatException exception) {
+            throw new CommandInputException(presentation.invalidPage(value), exception);
         }
     }
 
@@ -197,10 +345,13 @@ public final class PaperWhitelistCommand {
             };
             dispatchCallback(sender, () -> sendMutationOutcome(sender, mutation, identity, outcome));
         } catch (AccessGrantScopeValidationException exception) {
-            dispatchCallback(sender, () -> sender.sendMessage(exception.getMessage()));
+            dispatchCallback(sender, () -> send(sender, presentation.validationFailure(exception.getMessage())));
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to update the monban whitelist for " + identity + ".", exception);
-            dispatchCallback(sender, () -> sender.sendMessage(MUTATION_FAILURE_MESSAGE));
+            dispatchCallback(sender, () -> send(
+                    sender,
+                    presentation.mutationFailure(WhitelistPresentation.LogTarget.SERVER)
+            ));
         }
     }
 
@@ -211,20 +362,18 @@ public final class PaperWhitelistCommand {
             MutationOutcome outcome
     ) {
         switch (mutation) {
-            case ADD -> {
-                if (outcome.addResult() == AccessGrantAddResult.ADDED) {
-                    sender.sendMessage("Added " + formatIdentity(identity) + " to the monban whitelist.");
-                } else {
-                    sender.sendMessage("Whitelist entry already exists.");
-                }
-            }
-            case REMOVE -> {
-                if (outcome.removeResult() == AccessGrantRemoveResult.REMOVED) {
-                    sender.sendMessage("Removed " + formatIdentity(identity) + " from the monban whitelist.");
-                } else {
-                    sender.sendMessage("No matching whitelist entry exists.");
-                }
-            }
+            case ADD -> send(
+                    sender,
+                    outcome.addResult() == AccessGrantAddResult.ADDED
+                            ? presentation.added(identity)
+                            : presentation.alreadyExists()
+            );
+            case REMOVE -> send(
+                    sender,
+                    outcome.removeResult() == AccessGrantRemoveResult.REMOVED
+                            ? presentation.removed(identity)
+                            : presentation.notFound()
+            );
         }
     }
 
@@ -236,47 +385,12 @@ public final class PaperWhitelistCommand {
         }
     }
 
-    private boolean sendListing(
-            CommandSender sender,
-            IdentityType filter,
-            List<AccessGrant> grants,
-            int page
-    ) {
-        List<AccessGrant> sorted = new ArrayList<>(grants);
-        sorted.sort(WHITELIST_ORDER);
-
-        if (sorted.isEmpty()) {
-            sender.sendMessage(filter == null
-                    ? "No whitelist entries found."
-                    : "No " + filter + " whitelist entries found.");
-            return true;
-        }
-
-        int total = sorted.size();
-        int totalPages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        if (page > totalPages) {
-            sender.sendMessage("Page " + page + " is out of range. Available pages: 1-" + totalPages + ".");
-            return false;
-        }
-
-        sender.sendMessage(filter == null
-                ? "Whitelist — page " + page + "/" + totalPages
-                : "Whitelist (" + filter + ") — page " + page + "/" + totalPages);
-
-        int fromIndex = (page - 1) * PAGE_SIZE;
-        int toIndex = Math.min(fromIndex + PAGE_SIZE, total);
-        for (int index = fromIndex; index < toIndex; index++) {
-            sender.sendMessage(formatIdentity(sorted.get(index).identity()));
-        }
-        sender.sendMessage((toIndex - fromIndex) + " entries shown — " + total + " total");
-        return true;
+    private void send(CommandSender sender, Component component) {
+        messageSender.accept(sender, component);
     }
 
-    private static String formatIdentity(PlayerIdentity identity) {
-        return switch (identity.type()) {
-            case OFFLINE -> "OFFLINE " + identity.name();
-            case ONLINE -> "ONLINE " + identity.name() + " " + identity.verifiedUuid().orElseThrow();
-        };
+    private void sendAll(CommandSender sender, List<Component> components) {
+        components.forEach(component -> messageSender.accept(sender, component));
     }
 
     private enum Mutation {
@@ -284,12 +398,24 @@ public final class PaperWhitelistCommand {
         REMOVE
     }
 
+    @FunctionalInterface
+    public interface WhitelistStateStore {
+        void save(boolean enabled) throws Exception;
+    }
+
     private record MutationOutcome(AccessGrantAddResult addResult, AccessGrantRemoveResult removeResult) {
     }
 
     private static final class CommandInputException extends IllegalArgumentException {
-        private CommandInputException(String message, Throwable cause) {
-            super(message, cause);
+        private final Component component;
+
+        private CommandInputException(Component component, Throwable cause) {
+            super(cause);
+            this.component = Objects.requireNonNull(component, "component");
+        }
+
+        private Component component() {
+            return component;
         }
     }
 }

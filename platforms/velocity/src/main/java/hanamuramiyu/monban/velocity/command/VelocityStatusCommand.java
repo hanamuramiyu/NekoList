@@ -12,31 +12,52 @@ import hanamuramiyu.monban.access.group.ServerGroupCatalog;
 import hanamuramiyu.monban.access.scope.AccessScopeType;
 import hanamuramiyu.monban.config.MonbanConfig;
 import hanamuramiyu.monban.velocity.MonbanVelocityPluginMetadata;
+import hanamuramiyu.monban.presentation.MonbanUi;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 public final class VelocityStatusCommand {
     public static final String PERMISSION = "monban.command.status";
-
-    private static final Component READ_FAILURE_MESSAGE =
-            Component.text("Failed to read monban status. Check the proxy log.");
 
     private final MonbanConfig config;
     private final AccessGrantInventory grantInventory;
     private final ServerGroupCatalog serverGroupCatalog;
     private final BackendAccessPolicyCatalog backendAccessPolicyCatalog;
+    private final BooleanSupplier whitelistEnabled;
     private final boolean velocityOnlineMode;
     private final Logger logger;
+    private final MonbanUi ui = new MonbanUi();
 
     public VelocityStatusCommand(
             MonbanConfig config,
             AccessGrantInventory grantInventory,
             ServerGroupCatalog serverGroupCatalog,
             BackendAccessPolicyCatalog backendAccessPolicyCatalog,
+            boolean velocityOnlineMode,
+            Logger logger
+    ) {
+        this(
+                config,
+                grantInventory,
+                serverGroupCatalog,
+                backendAccessPolicyCatalog,
+                () -> config.whitelist().enabled(),
+                velocityOnlineMode,
+                logger
+        );
+    }
+
+    public VelocityStatusCommand(
+            MonbanConfig config,
+            AccessGrantInventory grantInventory,
+            ServerGroupCatalog serverGroupCatalog,
+            BackendAccessPolicyCatalog backendAccessPolicyCatalog,
+            BooleanSupplier whitelistEnabled,
             boolean velocityOnlineMode,
             Logger logger
     ) {
@@ -47,6 +68,7 @@ public final class VelocityStatusCommand {
                 backendAccessPolicyCatalog,
                 "backendAccessPolicyCatalog"
         );
+        this.whitelistEnabled = Objects.requireNonNull(whitelistEnabled, "whitelistEnabled");
         this.velocityOnlineMode = velocityOnlineMode;
         this.logger = Objects.requireNonNull(logger, "logger");
     }
@@ -63,7 +85,7 @@ public final class VelocityStatusCommand {
             lines = buildStatusLines();
         } catch (RuntimeException exception) {
             logger.error("Failed to read monban status.", exception);
-            context.getSource().sendMessage(READ_FAILURE_MESSAGE);
+            context.getSource().sendMessage(ui.error(ui.text("Failed to read monban status. Check the proxy log.")));
             return 0;
         }
 
@@ -93,32 +115,26 @@ public final class VelocityStatusCommand {
         int serverPolicies = backendAccessPolicyCatalog.serverPolicies().size();
         int explicitPolicies = backendAccessPolicyCatalog.explicitPolicyCount();
 
-        List<Component> lines = new ArrayList<>(9);
-        lines.add(Component.text("monban " + MonbanVelocityPluginMetadata.VERSION + " — Velocity status"));
-        lines.add(Component.text("Deployment: " + config.deployment().mode()));
-        lines.add(Component.text("Whitelist: " + enabled(config.whitelist().enabled())));
-        lines.add(Component.text("Identity mode: " + config.identity().mode()));
+        List<Component> lines = new ArrayList<>(12);
+        lines.add(ui.text("monban " + MonbanVelocityPluginMetadata.VERSION + " — Velocity status"));
+        lines.add(ui.muted("────────────────────────────"));
+        lines.add(ui.text("Deployment: " + config.deployment().mode()));
+        lines.add(ui.text("Whitelist: " + enabled(whitelistEnabled.getAsBoolean())));
+        lines.add(ui.text("Identity mode: " + config.identity().mode()));
         if (config.identity().hybrid().enabled()) {
-            lines.add(Component.text(
-                    "Hybrid: enabled (preference: "
-                            + config.identity().hybrid().dualEntryPreference()
-                            + ")"
-            ));
+            lines.add(ui.text("Hybrid: enabled (preference: " + config.identity().hybrid().dualEntryPreference() + ")"));
         } else {
-            lines.add(Component.text("Hybrid: disabled"));
+            lines.add(ui.text("Hybrid: disabled"));
         }
-        lines.add(Component.text("Velocity online-mode: " + enabled(velocityOnlineMode)));
-        lines.add(Component.text(
-                "Access grants: " + grants.size() + " total — NETWORK " + networkGrants
-                        + ", SERVER_GROUP " + serverGroupGrants
-                        + ", SERVER " + serverGrants
-        ));
-        lines.add(Component.text("Server groups: " + serverGroups));
-        lines.add(Component.text(
-                "Backend access: default " + backendAccessPolicyCatalog.defaultMode()
-                        + " — " + explicitPolicies + " explicit policies"
-                        + " (SERVER_GROUP " + serverGroupPolicies + ", SERVER " + serverPolicies + ")"
-        ));
+        lines.add(ui.text("Velocity online-mode: " + enabled(velocityOnlineMode)));
+        lines.add(ui.muted("Topology"));
+        lines.add(ui.text("Access grants: " + grants.size() + " total — NETWORK " + networkGrants
+                + ", SERVER_GROUP " + serverGroupGrants + ", SERVER " + serverGrants));
+        lines.add(ui.text("Server groups: " + serverGroups));
+        lines.add(ui.muted("Backend access"));
+        lines.add(ui.text("Backend access: default " + backendAccessPolicyCatalog.defaultMode()
+                + " — " + explicitPolicies + " explicit policies (SERVER_GROUP " + serverGroupPolicies
+                + ", SERVER " + serverPolicies + ")"));
         return List.copyOf(lines);
     }
 

@@ -18,6 +18,7 @@ repositories {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":presentation"))
     implementation(project(":config:file"))
     implementation(project(":storage:file"))
 

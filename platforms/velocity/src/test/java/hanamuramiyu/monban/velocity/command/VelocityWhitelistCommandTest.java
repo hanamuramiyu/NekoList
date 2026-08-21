@@ -1,12 +1,11 @@
 package hanamuramiyu.monban.velocity.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.velocitypowered.api.command.BrigadierCommand;
 import com.velocitypowered.api.command.CommandSource;
-import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
+import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.backend.BackendAccessMode;
 import hanamuramiyu.monban.access.backend.BackendAccessPolicyCatalog;
 import hanamuramiyu.monban.access.grant.AccessGrant;
@@ -17,11 +16,11 @@ import hanamuramiyu.monban.access.grant.memory.InMemoryAccessGrantRepository;
 import hanamuramiyu.monban.access.group.ServerGroupCatalog;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.config.MonbanConfig;
+import hanamuramiyu.monban.identity.OnlineProfileResolver;
 import hanamuramiyu.monban.identity.PlayerIdentity;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 
-import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,7 +30,7 @@ import java.util.concurrent.Executor;
 import static hanamuramiyu.monban.velocity.command.VelocityCommandTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VelocityWhitelistCommandTest {
@@ -47,14 +46,14 @@ class VelocityWhitelistCommandTest {
         assertEquals(1, dispatcher.execute("monban whitelist add offline hanamuramiyu", source.source()));
         assertEquals(AccessScope.network(), repository.delegate.findAll().getFirst().scope());
         assertEquals(PlayerIdentity.offline("hanamuramiyu"), repository.delegate.findAll().getFirst().identity());
-        assertTrue(source.messagesContain("Added OFFLINE hanamuramiyu"));
+        assertTrue(source.messagesContain("Added [OFFLINE] hanamuramiyu"));
 
         assertEquals(1, dispatcher.execute("monban whitelist add offline hanamuramiyu", source.source()));
         assertTrue(source.messagesContain("Whitelist entry already exists."));
 
         assertEquals(1, dispatcher.execute("monban whitelist remove offline HANAMURAMIYU", source.source()));
         assertTrue(repository.delegate.findAll().isEmpty());
-        assertTrue(source.messagesContain("Removed OFFLINE HANAMURAMIYU"));
+        assertTrue(source.messagesContain("Removed [OFFLINE] HANAMURAMIYU"));
 
         assertEquals(1, dispatcher.execute("monban whitelist remove offline hanamuramiyu", source.source()));
         assertTrue(source.messagesContain("No matching whitelist entry exists."));
@@ -71,7 +70,8 @@ class VelocityWhitelistCommandTest {
         AccessGrant stored = repository.delegate.findAll().getFirst();
         assertEquals(AccessScope.network(), stored.scope());
         assertEquals(VERIFIED_UUID, stored.identity().verifiedUuid().orElseThrow());
-        assertTrue(source.messagesContain("ONLINE hanamuramiyu " + VERIFIED_UUID));
+        assertTrue(source.messagesContain("[ONLINE] hanamuramiyu · 00000000…0001"));
+        assertFalse(source.messagesContain(VERIFIED_UUID.toString()));
 
         dispatcher.execute("monban whitelist remove online hanamuramiyu_new " + VERIFIED_UUID, source.source());
         assertTrue(repository.delegate.findAll().isEmpty());
@@ -103,15 +103,15 @@ class VelocityWhitelistCommandTest {
         assertTrue(executor.tasks.isEmpty());
         assertTrue(source.messagesContain("Invalid UUID"));
 
-        assertThrows(
-                CommandSyntaxException.class,
-                () -> dispatcher.execute("monban whitelist list 0", source.source())
-        );
+        assertEquals(0, dispatcher.execute("monban whitelist list 0", source.source()));
+        assertTrue(source.messagesContain("Invalid page: 0. Page must be at least 1."));
+        assertEquals(0, dispatcher.execute("monban whitelist list nope", source.source()));
+        assertTrue(source.messagesContain("Invalid page: nope. Page must be at least 1."));
         assertEquals(0, repository.addCalls);
     }
 
     @Test
-    void listFiltersPaginatesDeterministicallyAndHidesOfflineTechnicalUuid() throws Exception {
+    void listFiltersPaginatesDeterministicallyAndHidesFullUuid() throws Exception {
         RecordingRepository repository = new RecordingRepository();
         repository.seed(new AccessGrant(AccessScope.network(), PlayerIdentity.online("hanamuramiyu9", VERIFIED_UUID)));
         repository.seed(new AccessGrant(AccessScope.network(), PlayerIdentity.offline("hanamuramiyu", TECHNICAL_UUID)));
@@ -125,21 +125,22 @@ class VelocityWhitelistCommandTest {
         RecordingCommandSource source = new RecordingCommandSource(VelocityWhitelistCommand.PERMISSION);
 
         assertEquals(1, dispatcher.execute("monban whitelist list 2", source.source()));
-        assertTrue(source.messagesContain("Whitelist — page 2/2"));
-        assertTrue(source.messagesContain("3 entries shown — 13 total"));
+        assertTrue(source.messagesContain("page 2/2"));
+        assertTrue(source.messagesContain("11–13 of 13"));
         assertFalse(source.messagesContain(TECHNICAL_UUID.toString()));
-        assertTrue(source.messageIndexContaining("OFFLINE hanamuramiyu") < source.messageIndexContaining("ONLINE hanamuramiyu9"));
+        assertTrue(source.messageIndexContaining("[OFFLINE] hanamuramiyu") < source.messageIndexContaining("[ONLINE] hanamuramiyu9"));
 
         RecordingCommandSource online = new RecordingCommandSource(VelocityWhitelistCommand.PERMISSION);
         assertEquals(1, dispatcher.execute("monban whitelist list online", online.source()));
-        assertTrue(online.messagesContain("Whitelist (ONLINE) — page 1/1"));
-        assertTrue(online.messagesContain(VERIFIED_UUID.toString()));
-        assertFalse(online.messagesContain("OFFLINE"));
+        assertTrue(online.messagesContain("[ONLINE]"));
+        assertTrue(online.messagesContain("00000000…0001"));
+        assertFalse(online.messagesContain(VERIFIED_UUID.toString()));
+        assertFalse(online.messagesContain("[OFFLINE]"));
 
         RecordingCommandSource offline = new RecordingCommandSource(VelocityWhitelistCommand.PERMISSION);
         assertEquals(1, dispatcher.execute("monban whitelist list offline 2", offline.source()));
-        assertTrue(offline.messagesContain("Whitelist (OFFLINE) — page 2/2"));
-        assertFalse(offline.messagesContain("ONLINE"));
+        assertTrue(offline.messagesContain("page 2/2"));
+        assertFalse(offline.messagesContain("[ONLINE]"));
     }
 
     @Test
@@ -202,8 +203,62 @@ class VelocityWhitelistCommandTest {
         dispatcher.execute("monban access grant network offline hanamuramiyu2", source.source());
         RecordingCommandSource whitelistView = new RecordingCommandSource(VelocityWhitelistCommand.PERMISSION);
         dispatcher.execute("monban whitelist list", whitelistView.source());
-        assertTrue(whitelistView.messagesContain("OFFLINE hanamuramiyu"));
-        assertTrue(whitelistView.messagesContain("OFFLINE hanamuramiyu2"));
+        assertTrue(whitelistView.messagesContain("[OFFLINE] hanamuramiyu"));
+        assertTrue(whitelistView.messagesContain("[OFFLINE] hanamuramiyu2"));
+    }
+
+    @Test
+    void enableAndDisablePersistBeforeChangingRuntimePolicy() throws Exception {
+        RecordingRepository repository = new RecordingRepository();
+        WhitelistPolicy policy = new WhitelistPolicy(false);
+        List<Boolean> persisted = new java.util.ArrayList<>();
+        CommandDispatcher<CommandSource> dispatcher = dispatcher(
+                repository,
+                Runnable::run,
+                new RecordingLogger().logger(),
+                policy,
+                persisted::add
+        );
+        RecordingCommandSource source = new RecordingCommandSource(VelocityWhitelistCommand.PERMISSION);
+
+        assertEquals(1, dispatcher.execute("monban whitelist enable", source.source()));
+        assertTrue(policy.enabled());
+        assertEquals(List.of(true), persisted);
+        assertTrue(source.messagesContain("The monban whitelist is now enabled."));
+
+        assertEquals(1, dispatcher.execute("monban whitelist enable", source.source()));
+        assertEquals(List.of(true), persisted);
+        assertTrue(source.messagesContain("The monban whitelist is already enabled."));
+
+        assertEquals(1, dispatcher.execute("monban whitelist disable", source.source()));
+        assertFalse(policy.enabled());
+        assertEquals(List.of(true, false), persisted);
+        assertTrue(source.messagesContain("The monban whitelist is now disabled."));
+    }
+
+    @Test
+    void failedPolicyPersistenceLeavesRuntimePolicyUnchanged() throws Exception {
+        RecordingRepository repository = new RecordingRepository();
+        WhitelistPolicy policy = new WhitelistPolicy(false);
+        IllegalStateException failure = new IllegalStateException("write failed at /secret/config.yml");
+        RecordingLogger logger = new RecordingLogger();
+        CommandDispatcher<CommandSource> dispatcher = dispatcher(
+                repository,
+                Runnable::run,
+                logger.logger(),
+                policy,
+                enabled -> {
+                    throw failure;
+                }
+        );
+        RecordingCommandSource source = new RecordingCommandSource(VelocityWhitelistCommand.PERMISSION);
+
+        assertEquals(1, dispatcher.execute("monban whitelist enable", source.source()));
+
+        assertFalse(policy.enabled());
+        assertSame(failure, logger.lastThrowable);
+        assertTrue(source.messagesContain("Failed to update the whitelist policy. Check the proxy log."));
+        assertFalse(source.messagesContain("/secret/config.yml"));
     }
 
     private static CommandDispatcher<CommandSource> dispatcher(
@@ -211,10 +266,29 @@ class VelocityWhitelistCommandTest {
             Executor executor,
             Logger logger
     ) {
+        return dispatcher(repository, executor, logger, new WhitelistPolicy(false), enabled -> {
+        });
+    }
+
+    private static CommandDispatcher<CommandSource> dispatcher(
+            RecordingRepository repository,
+            Executor executor,
+            Logger logger,
+            WhitelistPolicy whitelistPolicy,
+            VelocityWhitelistCommand.WhitelistStateStore whitelistStateStore
+    ) {
         AccessGrantAdministrationService service = new AccessGrantAdministrationService(repository, scope -> {});
         ProxyServer proxy = proxyServerStub(List.of(), List.of());
         ServerGroupCatalog groups = new ServerGroupCatalog(List.of());
-        VelocityWhitelistCommand whitelist = new VelocityWhitelistCommand(service, proxy, executor, logger);
+        VelocityWhitelistCommand whitelist = new VelocityWhitelistCommand(
+                service,
+                proxy,
+                executor,
+                logger,
+                OnlineProfileResolver.unavailable(),
+                whitelistPolicy,
+                whitelistStateStore
+        );
         VelocityAccessCommand access = new VelocityAccessCommand(service, groups, proxy, executor, logger);
         VelocityStatusCommand status = new VelocityStatusCommand(
                 MonbanConfig.defaults(),

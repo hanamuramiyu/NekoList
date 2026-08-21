@@ -20,7 +20,9 @@ import java.util.Map;
 
 import static hanamuramiyu.monban.velocity.command.VelocityCommandTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VelocityMonbanCommandTest {
     @Test
@@ -35,6 +37,20 @@ class VelocityMonbanCommandTest {
     }
 
     @Test
+    void accessRootShowsUsageOnlyToOperators() throws Exception {
+        CommandDispatcher<CommandSource> dispatcher = dispatcher();
+
+        RecordingCommandSource operator = new RecordingCommandSource(VelocityAccessCommand.PERMISSION);
+        assertEquals(1, dispatcher.execute("monban access", operator.source()));
+        assertTrue(operator.messagesContain("/monban access grant network offline <name>"));
+
+        RecordingCommandSource player = new RecordingCommandSource();
+        assertEquals(1, dispatcher.execute("monban access", player.source()));
+        assertTrue(player.messagesContain("Unknown command. Type \"/help\" for help."));
+        assertFalse(player.messagesContain("/monban access grant"));
+    }
+
+    @Test
     void rootComposesWhitelistAccessAndStatusWithIndependentPermissions() throws Exception {
         CommandDispatcher<CommandSource> dispatcher = dispatcher();
 
@@ -42,6 +58,12 @@ class VelocityMonbanCommandTest {
         assertEquals(1, dispatcher.execute("monban whitelist list", whitelistOnly.source()));
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban access list", whitelistOnly.source()));
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban status", whitelistOnly.source()));
+
+        RecordingCommandSource lookupOnly = new RecordingCommandSource(VelocityLookupCommand.PERMISSION);
+        assertEquals(1, dispatcher.execute("monban lookup hanamuramiyu", lookupOnly.source()));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban whitelist list", lookupOnly.source()));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban access list", lookupOnly.source()));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban status", lookupOnly.source()));
 
         RecordingCommandSource accessOnly = new RecordingCommandSource(VelocityAccessCommand.PERMISSION);
         assertEquals(1, dispatcher.execute("monban access list", accessOnly.source()));
@@ -52,6 +74,10 @@ class VelocityMonbanCommandTest {
         assertEquals(1, dispatcher.execute("monban status", statusOnly.source()));
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban whitelist list", statusOnly.source()));
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("monban access list", statusOnly.source()));
+
+        RecordingCommandSource allCommands = new RecordingCommandSource(true);
+        assertTrue(dispatcher.execute("monban", allCommands.source()) > 0);
+        assertTrue(allCommands.messagesContain("/monban lookup <player>"));
     }
 
     private static CommandDispatcher<CommandSource> dispatcher() {
@@ -62,6 +88,12 @@ class VelocityMonbanCommandTest {
         Logger logger = new RecordingLogger().logger();
 
         VelocityWhitelistCommand whitelist = new VelocityWhitelistCommand(administration, proxyServer, Runnable::run, logger);
+        VelocityLookupCommand lookup = new VelocityLookupCommand(
+                administration,
+                proxyServer,
+                Runnable::run,
+                logger
+        );
         VelocityAccessCommand access = new VelocityAccessCommand(
                 administration,
                 serverGroups,
@@ -78,7 +110,7 @@ class VelocityMonbanCommandTest {
                 logger
         );
 
-        BrigadierCommand root = VelocityMonbanCommand.create(whitelist, access, status);
+        BrigadierCommand root = VelocityMonbanCommand.create(whitelist, lookup, access, status);
         CommandDispatcher<CommandSource> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(root.getNode());
         return dispatcher;

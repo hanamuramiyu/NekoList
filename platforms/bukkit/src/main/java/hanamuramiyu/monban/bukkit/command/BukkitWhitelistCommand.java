@@ -1,22 +1,29 @@
 package hanamuramiyu.monban.bukkit.command;
 
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
+import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.admin.AccessGrantScopeValidationException;
 import hanamuramiyu.monban.access.grant.AccessGrant;
 import hanamuramiyu.monban.access.grant.AccessGrantAddResult;
 import hanamuramiyu.monban.access.grant.AccessGrantRemoveResult;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.identity.IdentityType;
+import hanamuramiyu.monban.identity.OnlineProfile;
+import hanamuramiyu.monban.identity.OnlineProfileResolutionException;
+import hanamuramiyu.monban.identity.OnlineProfileResolver;
 import hanamuramiyu.monban.identity.PlayerIdentity;
+import hanamuramiyu.monban.presentation.WhitelistListView;
+import hanamuramiyu.monban.presentation.WhitelistPresentation;
+import hanamuramiyu.monban.presentation.MonbanUi;
+import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -24,33 +31,61 @@ import java.util.logging.Logger;
 public final class BukkitWhitelistCommand {
     public static final String PERMISSION = "monban.command.whitelist";
 
-    private static final int PAGE_SIZE = 10;
     private static final AccessScope NETWORK_SCOPE = AccessScope.network();
-    private static final String MUTATION_FAILURE_MESSAGE =
-            "Failed to update the monban whitelist. Check the server log.";
-    private static final String READ_FAILURE_MESSAGE =
-            "Failed to read the monban whitelist. Check the server log.";
-
-    private static final Comparator<AccessGrant> WHITELIST_ORDER = Comparator
-            .comparing((AccessGrant grant) -> grant.identity().type().name())
-            .thenComparing(grant -> grant.identity().normalizedName())
-            .thenComparing(grant -> grant.identity().verifiedUuid().map(UUID::toString).orElse(""));
 
     private final AccessGrantAdministrationService administrationService;
     private final Executor mutationExecutor;
     private final Function<CommandSender, Executor> callbackExecutor;
+    private final BiConsumer<CommandSender, Component> messageSender;
     private final Logger logger;
+    private final OnlineProfileResolver profileResolver;
+    private final WhitelistPolicy whitelistPolicy;
+    private final WhitelistStateStore whitelistStateStore;
+    private final WhitelistPresentation presentation = new WhitelistPresentation();
 
     public BukkitWhitelistCommand(
             AccessGrantAdministrationService administrationService,
             Executor mutationExecutor,
             Function<CommandSender, Executor> callbackExecutor,
+            BiConsumer<CommandSender, Component> messageSender,
             Logger logger
+    ) {
+        this(administrationService, mutationExecutor, callbackExecutor, messageSender, logger,
+                OnlineProfileResolver.unavailable(), new WhitelistPolicy(false), enabled -> {
+                });
+    }
+
+    public BukkitWhitelistCommand(
+            AccessGrantAdministrationService administrationService,
+            Executor mutationExecutor,
+            Function<CommandSender, Executor> callbackExecutor,
+            BiConsumer<CommandSender, Component> messageSender,
+            Logger logger,
+            OnlineProfileResolver profileResolver
+    ) {
+        this(administrationService, mutationExecutor, callbackExecutor, messageSender, logger,
+                profileResolver, new WhitelistPolicy(false), enabled -> {
+                });
+    }
+
+    public BukkitWhitelistCommand(
+            AccessGrantAdministrationService administrationService,
+            Executor mutationExecutor,
+            Function<CommandSender, Executor> callbackExecutor,
+            BiConsumer<CommandSender, Component> messageSender,
+            Logger logger,
+            OnlineProfileResolver profileResolver,
+            WhitelistPolicy whitelistPolicy,
+            WhitelistStateStore whitelistStateStore
     ) {
         this.administrationService = Objects.requireNonNull(administrationService, "administrationService");
         this.mutationExecutor = Objects.requireNonNull(mutationExecutor, "mutationExecutor");
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
+        this.messageSender = Objects.requireNonNull(messageSender, "messageSender");
         this.logger = Objects.requireNonNull(logger, "logger");
+        this.profileResolver = Objects.requireNonNull(profileResolver, "profileResolver");
+        this.whitelistPolicy = Objects.requireNonNull(whitelistPolicy, "whitelistPolicy");
+        this.whitelistStateStore = Objects.requireNonNull(whitelistStateStore, "whitelistStateStore");
     }
 
     public boolean execute(CommandSender sender, String[] args) {
@@ -58,20 +93,22 @@ public final class BukkitWhitelistCommand {
         Objects.requireNonNull(args, "args");
 
         if (!sender.hasPermission(PERMISSION)) {
-            sender.sendMessage("You do not have permission to use /monban whitelist.");
+            send(sender, new MonbanUi().unknownCommand());
             return true;
         }
         if (args.length == 0) {
-            sendUsage(sender);
+            sendAll(sender, presentation.usage());
             return true;
         }
 
         return switch (args[0].toLowerCase(Locale.ROOT)) {
             case "add" -> executeMutation(sender, args, Mutation.ADD);
             case "remove" -> executeMutation(sender, args, Mutation.REMOVE);
+            case "enable" -> executePolicy(sender, true);
+            case "disable" -> executePolicy(sender, false);
             case "list" -> executeList(sender, args);
             default -> {
-                sendUsage(sender);
+                sendAll(sender, presentation.usage());
                 yield true;
             }
         };
@@ -82,7 +119,7 @@ public final class BukkitWhitelistCommand {
             return List.of();
         }
         if (args.length == 1) {
-            return matching(args[0], List.of("add", "remove", "list"));
+            return matching(args[0], List.of("add", "remove", "enable", "disable", "list"));
         }
         if ((equalsIgnoreCase(args[0], "add") || equalsIgnoreCase(args[0], "remove")) && args.length == 2) {
             return matching(args[1], List.of("offline", "online"));
@@ -93,12 +130,46 @@ public final class BukkitWhitelistCommand {
         return List.of();
     }
 
+    private boolean executePolicy(CommandSender sender, boolean enabled) {
+        try {
+            mutationExecutor.execute(() -> runPolicyUpdate(sender, enabled));
+        } catch (RuntimeException exception) {
+            logger.log(Level.SEVERE, "Failed to schedule monban whitelist policy update.", exception);
+            send(sender, presentation.policyUpdateFailure(WhitelistPresentation.LogTarget.SERVER));
+        }
+        return true;
+    }
+
+    private void runPolicyUpdate(CommandSender sender, boolean enabled) {
+        synchronized (whitelistPolicy) {
+            if (whitelistPolicy.enabled() == enabled) {
+                dispatchCallback(sender, () -> send(sender,
+                        enabled ? presentation.alreadyEnabled() : presentation.alreadyDisabled()));
+                return;
+            }
+            try {
+                whitelistStateStore.save(enabled);
+                whitelistPolicy.setEnabled(enabled);
+            } catch (Exception exception) {
+                logger.log(Level.SEVERE, "Failed to persist monban whitelist policy.", exception);
+                dispatchCallback(sender, () -> send(sender,
+                        presentation.policyUpdateFailure(WhitelistPresentation.LogTarget.SERVER)));
+                return;
+            }
+            dispatchCallback(sender, () -> send(sender,
+                    enabled ? presentation.enabled() : presentation.disabled()));
+        }
+    }
+
     private boolean executeMutation(CommandSender sender, String[] args, Mutation mutation) {
+        if (args.length == 3 && equalsIgnoreCase(args[1], "online")) {
+            return executeAutomaticMutation(sender, args[2], mutation);
+        }
         PlayerIdentity identity;
         try {
             identity = parseMutationIdentity(args);
         } catch (CommandInputException exception) {
-            sender.sendMessage(exception.getMessage());
+            send(sender, exception.component());
             return true;
         }
 
@@ -106,7 +177,42 @@ public final class BukkitWhitelistCommand {
             mutationExecutor.execute(() -> runMutation(sender, mutation, identity));
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to schedule monban whitelist mutation.", exception);
-            sender.sendMessage(MUTATION_FAILURE_MESSAGE);
+            send(sender, presentation.mutationFailure(WhitelistPresentation.LogTarget.SERVER));
+        }
+        return true;
+    }
+
+    private boolean executeAutomaticMutation(CommandSender sender, String name, Mutation mutation) {
+        try {
+            PlayerIdentity.offline(name);
+        } catch (IllegalArgumentException exception) {
+            send(sender, presentation.invalidPlayerName(name));
+            return true;
+        }
+        try {
+            mutationExecutor.execute(() -> {
+                try {
+                    OnlineProfile profile = profileResolver.resolve(name).toCompletableFuture().join();
+                    runMutation(sender, mutation, profile.identity());
+                } catch (RuntimeException exception) {
+                    Throwable cause = exception.getCause() instanceof OnlineProfileResolutionException resolved
+                            ? resolved
+                            : exception;
+                    dispatchCallback(sender, () -> send(sender,
+                            cause instanceof OnlineProfileResolutionException resolved
+                                    && resolved.kind() == OnlineProfileResolutionException.Kind.NOT_FOUND
+                                    ? presentation.onlineProfileNotFound()
+                                    : cause instanceof OnlineProfileResolutionException
+                                    ? presentation.onlineProfileUnavailable()
+                                    : presentation.mutationFailure(WhitelistPresentation.LogTarget.SERVER)));
+                    if (!(cause instanceof OnlineProfileResolutionException)) {
+                        logger.log(Level.SEVERE, "Failed to resolve online profile for " + name + ".", exception);
+                    }
+                }
+            });
+        } catch (RuntimeException exception) {
+            logger.log(Level.SEVERE, "Failed to schedule online profile lookup.", exception);
+            send(sender, presentation.onlineProfileUnavailable());
         }
         return true;
     }
@@ -116,31 +222,29 @@ public final class BukkitWhitelistCommand {
         try {
             request = parseListRequest(args);
         } catch (CommandInputException exception) {
-            sender.sendMessage(exception.getMessage());
+            send(sender, exception.component());
             return true;
         }
 
         try {
-            List<AccessGrant> grants = administrationService.findAll(NETWORK_SCOPE);
-            if (request.filter() != null) {
-                grants = grants.stream()
-                        .filter(grant -> grant.identity().type() == request.filter())
-                        .toList();
-            }
-            sendListing(sender, request.filter(), grants, request.page());
+            WhitelistListView view = presentation.listing(
+                    administrationService.findAll(NETWORK_SCOPE),
+                    request.filter(),
+                    request.page()
+            );
+            sendAll(sender, view.lines());
         } catch (AccessGrantScopeValidationException exception) {
-            sender.sendMessage(exception.getMessage());
+            send(sender, presentation.validationFailure(exception.getMessage()));
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to read the monban whitelist.", exception);
-            sender.sendMessage(READ_FAILURE_MESSAGE);
+            send(sender, presentation.readFailure(WhitelistPresentation.LogTarget.SERVER));
         }
         return true;
     }
 
     private PlayerIdentity parseMutationIdentity(String[] args) {
         if (args.length < 3) {
-            throw new CommandInputException("Usage: /monban whitelist " + args[0]
-                    + " offline <name> | online <name> <uuid>");
+            throw new CommandInputException(presentation.invalidUsage(args[0]));
         }
 
         IdentityType type = parseIdentityType(args[1]);
@@ -149,17 +253,13 @@ public final class BukkitWhitelistCommand {
             return switch (type) {
                 case OFFLINE -> {
                     if (args.length != 3) {
-                        throw new CommandInputException(
-                                "Usage: /monban whitelist " + args[0] + " offline <name>"
-                        );
+                        throw new CommandInputException(presentation.invalidUsage(args[0]));
                     }
                     yield PlayerIdentity.offline(name);
                 }
                 case ONLINE -> {
                     if (args.length != 4) {
-                        throw new CommandInputException(
-                                "Usage: /monban whitelist " + args[0] + " online <name> <uuid>"
-                        );
+                        throw new CommandInputException(presentation.invalidUsage(args[0]));
                     }
                     yield PlayerIdentity.online(name, parseUuid(args[3]));
                 }
@@ -167,7 +267,7 @@ public final class BukkitWhitelistCommand {
         } catch (CommandInputException exception) {
             throw exception;
         } catch (IllegalArgumentException exception) {
-            throw new CommandInputException("Invalid Minecraft player name: " + name + ".", exception);
+            throw new CommandInputException(presentation.invalidPlayerName(name), exception);
         }
     }
 
@@ -184,9 +284,7 @@ public final class BukkitWhitelistCommand {
         if (args.length == 3) {
             return new ListRequest(parseIdentityType(args[1]), parsePage(args[2]));
         }
-        throw new CommandInputException(
-                "Usage: /monban whitelist list [page] | list <offline|online> [page]"
-        );
+        throw new CommandInputException(presentation.invalidUsage("list"));
     }
 
     private void runMutation(CommandSender sender, Mutation mutation, PlayerIdentity identity) {
@@ -203,10 +301,13 @@ public final class BukkitWhitelistCommand {
             };
             dispatchCallback(sender, () -> sendMutationOutcome(sender, mutation, identity, outcome));
         } catch (AccessGrantScopeValidationException exception) {
-            dispatchCallback(sender, () -> sender.sendMessage(exception.getMessage()));
+            dispatchCallback(sender, () -> send(sender, presentation.validationFailure(exception.getMessage())));
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to update the monban whitelist for " + identity + ".", exception);
-            dispatchCallback(sender, () -> sender.sendMessage(MUTATION_FAILURE_MESSAGE));
+            dispatchCallback(sender, () -> send(
+                    sender,
+                    presentation.mutationFailure(WhitelistPresentation.LogTarget.SERVER)
+            ));
         }
     }
 
@@ -217,20 +318,18 @@ public final class BukkitWhitelistCommand {
             MutationOutcome outcome
     ) {
         switch (mutation) {
-            case ADD -> {
-                if (outcome.addResult() == AccessGrantAddResult.ADDED) {
-                    sender.sendMessage("Added " + formatIdentity(identity) + " to the monban whitelist.");
-                } else {
-                    sender.sendMessage("Whitelist entry already exists.");
-                }
-            }
-            case REMOVE -> {
-                if (outcome.removeResult() == AccessGrantRemoveResult.REMOVED) {
-                    sender.sendMessage("Removed " + formatIdentity(identity) + " from the monban whitelist.");
-                } else {
-                    sender.sendMessage("No matching whitelist entry exists.");
-                }
-            }
+            case ADD -> send(
+                    sender,
+                    outcome.addResult() == AccessGrantAddResult.ADDED
+                            ? presentation.added(identity)
+                            : presentation.alreadyExists()
+            );
+            case REMOVE -> send(
+                    sender,
+                    outcome.removeResult() == AccessGrantRemoveResult.REMOVED
+                            ? presentation.removed(identity)
+                            : presentation.notFound()
+            );
         }
     }
 
@@ -242,40 +341,10 @@ public final class BukkitWhitelistCommand {
         }
     }
 
-    private void sendListing(CommandSender sender, IdentityType filter, List<AccessGrant> grants, int page) {
-        List<AccessGrant> sorted = new ArrayList<>(grants);
-        sorted.sort(WHITELIST_ORDER);
-
-        if (sorted.isEmpty()) {
-            sender.sendMessage(filter == null
-                    ? "No whitelist entries found."
-                    : "No " + filter + " whitelist entries found.");
-            return;
-        }
-
-        int total = sorted.size();
-        int totalPages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        if (page > totalPages) {
-            sender.sendMessage("Page " + page + " is out of range. Available pages: 1-" + totalPages + ".");
-            return;
-        }
-
-        sender.sendMessage(filter == null
-                ? "Whitelist — page " + page + "/" + totalPages
-                : "Whitelist (" + filter + ") — page " + page + "/" + totalPages);
-
-        int fromIndex = (page - 1) * PAGE_SIZE;
-        int toIndex = Math.min(fromIndex + PAGE_SIZE, total);
-        for (int index = fromIndex; index < toIndex; index++) {
-            sender.sendMessage(formatIdentity(sorted.get(index).identity()));
-        }
-        sender.sendMessage((toIndex - fromIndex) + " entries shown — " + total + " total");
-    }
-
-    private static IdentityType parseIdentityType(String value) {
+    private IdentityType parseIdentityType(String value) {
         IdentityType type = tryParseIdentityType(value);
         if (type == null) {
-            throw new CommandInputException("Identity type must be ONLINE or OFFLINE: " + value + ".");
+            throw new CommandInputException(presentation.invalidIdentityType(value));
         }
         return type;
     }
@@ -288,15 +357,15 @@ public final class BukkitWhitelistCommand {
         };
     }
 
-    private static UUID parseUuid(String value) {
+    private UUID parseUuid(String value) {
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException exception) {
-            throw new CommandInputException("Invalid UUID: " + value + ".", exception);
+            throw new CommandInputException(presentation.invalidUuid(value), exception);
         }
     }
 
-    private static int parsePage(String value) {
+    private int parsePage(String value) {
         try {
             int page = Integer.parseInt(value);
             if (page < 1) {
@@ -304,15 +373,16 @@ public final class BukkitWhitelistCommand {
             }
             return page;
         } catch (NumberFormatException exception) {
-            throw new CommandInputException("Invalid page: " + value + ". Page must be at least 1.", exception);
+            throw new CommandInputException(presentation.invalidPage(value), exception);
         }
     }
 
-    private static String formatIdentity(PlayerIdentity identity) {
-        return switch (identity.type()) {
-            case OFFLINE -> "OFFLINE " + identity.name();
-            case ONLINE -> "ONLINE " + identity.name() + " " + identity.verifiedUuid().orElseThrow();
-        };
+    private void send(CommandSender sender, Component component) {
+        messageSender.accept(sender, component);
+    }
+
+    private void sendAll(CommandSender sender, List<Component> components) {
+        components.forEach(component -> messageSender.accept(sender, component));
     }
 
     private static List<String> matching(String input, List<String> values) {
@@ -326,19 +396,14 @@ public final class BukkitWhitelistCommand {
         return left.equalsIgnoreCase(right);
     }
 
-    private static void sendUsage(CommandSender sender) {
-        sender.sendMessage("Usage:");
-        sender.sendMessage("/monban whitelist add offline <name>");
-        sender.sendMessage("/monban whitelist add online <name> <uuid>");
-        sender.sendMessage("/monban whitelist remove offline <name>");
-        sender.sendMessage("/monban whitelist remove online <name> <uuid>");
-        sender.sendMessage("/monban whitelist list [page]");
-        sender.sendMessage("/monban whitelist list <offline|online> [page]");
-    }
-
     private enum Mutation {
         ADD,
         REMOVE
+    }
+
+    @FunctionalInterface
+    public interface WhitelistStateStore {
+        void save(boolean enabled) throws Exception;
     }
 
     private record ListRequest(IdentityType filter, int page) {
@@ -348,12 +413,19 @@ public final class BukkitWhitelistCommand {
     }
 
     private static final class CommandInputException extends IllegalArgumentException {
-        private CommandInputException(String message) {
-            super(message);
+        private final Component component;
+
+        private CommandInputException(Component component) {
+            this.component = Objects.requireNonNull(component, "component");
         }
 
-        private CommandInputException(String message, Throwable cause) {
-            super(message, cause);
+        private CommandInputException(Component component, Throwable cause) {
+            super(cause);
+            this.component = Objects.requireNonNull(component, "component");
+        }
+
+        private Component component() {
+            return component;
         }
     }
 }

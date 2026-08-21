@@ -80,6 +80,24 @@ class FileMonbanConfigLoaderTest {
     }
 
     @Test
+    void saveUpdatesWhitelistStateAndKeepsVelocitySettings() throws IOException {
+        Path file = writeConfig(velocityConfig(false, "AUTO", true, "OFFLINE"));
+        FileMonbanConfigLoader loader = new FileMonbanConfigLoader(file);
+        MonbanConfig original = loader.load();
+
+        loader.save(new MonbanConfig(
+                original.deployment(),
+                new WhitelistSettings(true),
+                original.identity()
+        ));
+
+        MonbanConfig saved = loader.load();
+        assertTrue(saved.whitelist().enabled());
+        assertEquals(original.deployment(), saved.deployment());
+        assertEquals(original.identity(), saved.identity());
+    }
+
+    @Test
     void loadsConfiguredHybridValuesWithoutChangingConfigVersion() throws IOException {
         Path file = writeConfig(velocityConfig(true, "AUTO", true, "OFFLINE"));
 

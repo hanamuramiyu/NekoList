@@ -1,23 +1,60 @@
+# Gradle
 .gradle/
-build/
-out/
+**/build/
 !gradle/wrapper/gradle-wrapper.jar
-.vscode/
+
+# Java
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# IntelliJ IDEA
 .idea/
 *.iml
 *.ipr
 *.iws
-.DS_Store
-Thumbs.db
-*.jar
-!build/libs/*.jar
-logs/
+out/
+
+# Visual Studio Code
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# Fleet
+.fleet/
+
+# Minecraft development environments
+**/run/
+**/runs/
+**/logs/
+**/crash-reports/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.pfx
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
 *.log
-run/
-world/
-world_the_end/
-world_nether/
-/bin/
-/.settings/
-*.jar
-!build/libs/*-all.jar
+
+# Operating systems
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini

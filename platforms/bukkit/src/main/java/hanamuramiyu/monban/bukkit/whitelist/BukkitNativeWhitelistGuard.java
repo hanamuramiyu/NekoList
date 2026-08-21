@@ -1,5 +1,6 @@
 package hanamuramiyu.monban.bukkit.whitelist;
 
+import hanamuramiyu.monban.bukkit.command.BukkitWhitelistCommand;
 import org.bukkit.Server;
 import org.bukkit.command.CommandSender;
 import org.bukkit.event.EventHandler;
@@ -62,14 +63,18 @@ public final class BukkitNativeWhitelistGuard implements Listener {
     }
 
     static void sendBlockedMessage(CommandSender sender) {
-        sender.sendMessage("The vanilla Minecraft whitelist is disabled while monban is active.");
-        sender.sendMessage("Use monban instead:");
-        sender.sendMessage("/monban whitelist add offline <name>");
-        sender.sendMessage("/monban whitelist add online <name> <uuid>");
-        sender.sendMessage("/monban whitelist remove offline <name>");
-        sender.sendMessage("/monban whitelist remove online <name> <uuid>");
-        sender.sendMessage("/monban whitelist list");
-        sender.sendMessage("Whitelist enable/disable is currently configured in:");
-        sender.sendMessage("plugins/monban/config.yml (restart required)");
+        if (!sender.hasPermission(BukkitWhitelistCommand.PERMISSION)) {
+            sender.sendMessage("Unknown command. Type \"/help\" for help.");
+            return;
+        }
+        sender.sendMessage("§c✕ §fThe vanilla Minecraft whitelist is disabled while monban is active.");
+        sender.sendMessage("§7Use monban instead:");
+        sender.sendMessage("§d/monban whitelist add offline <name>");
+        sender.sendMessage("§d/monban whitelist add online <name>");
+        sender.sendMessage("§d/monban whitelist add online <name> <uuid>");
+        sender.sendMessage("§d/monban whitelist remove offline <name>");
+        sender.sendMessage("§d/monban whitelist remove online <name>");
+        sender.sendMessage("§d/monban whitelist remove online <name> <uuid>");
+        sender.sendMessage("§d/monban whitelist list");
     }
 }
