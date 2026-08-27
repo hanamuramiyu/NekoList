@@ -13,10 +13,20 @@ import java.util.Objects;
 
 public final class BukkitMonbanCommand implements CommandExecutor, TabCompleter {
     private final BukkitWhitelistCommand whitelistCommand;
+    private final boolean backendManaged;
     private final HelpPresentation help = new HelpPresentation();
 
     public BukkitMonbanCommand(BukkitWhitelistCommand whitelistCommand) {
-        this.whitelistCommand = Objects.requireNonNull(whitelistCommand, "whitelistCommand");
+        this(whitelistCommand, false);
+    }
+
+    public BukkitMonbanCommand(BukkitWhitelistCommand whitelistCommand, boolean backendManaged) {
+        this.whitelistCommand = backendManaged ? null : Objects.requireNonNull(whitelistCommand, "whitelistCommand");
+        this.backendManaged = backendManaged;
+    }
+
+    public BukkitMonbanCommand(boolean backendManaged) {
+        this(null, backendManaged);
     }
 
     @Override
@@ -26,6 +36,10 @@ public final class BukkitMonbanCommand implements CommandExecutor, TabCompleter 
             String label,
             String[] args
     ) {
+        if (backendManaged) {
+            sender.sendMessage("Whitelist administration is controlled by monban on Velocity.");
+            return true;
+        }
         if (args.length > 0 && args[0].equalsIgnoreCase("whitelist")) {
             return whitelistCommand.execute(sender, Arrays.copyOfRange(args, 1, args.length));
         }
@@ -42,6 +56,9 @@ public final class BukkitMonbanCommand implements CommandExecutor, TabCompleter 
             String alias,
             String[] args
     ) {
+        if (backendManaged) {
+            return List.of();
+        }
         if (args.length == 1) {
             return sender.hasPermission(BukkitWhitelistCommand.PERMISSION)
                     && "whitelist".startsWith(args[0].toLowerCase())

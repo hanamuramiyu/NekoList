@@ -27,4 +27,25 @@ The Paper/Folia plugin supports `deployment.mode: STANDALONE`. It can run on bac
 
 Configuring `deployment.mode: VELOCITY` on the Paper/Folia plugin is rejected.
 
+When the server is a backend in a Velocity network, monban can apply synchronized player-group and direct permissions locally. Install the Velocity monban build as the network authority, install this build on the backend, enable `backend-permissions` in `config.yml`, set the backend name, and copy the generated `sync.yml` from Velocity. In centralized mode local whitelist administration is disabled.
+
+For a backend registered in Velocity as `lobby`, use:
+
+```yaml
+backend-permissions:
+  enabled: true
+  server-name: lobby
+```
+
+Use the same `plugins/monban/sync.yml` contents on Velocity and the backend. `server-groups.yml` is created automatically. If `SERVER_GROUP` permissions are used, configure the same server-to-group mapping there as on Velocity. `state-revision` is a Velocity file and is not needed on the backend.
+
+Backend permissions can be checked with Chunky:
+
+```text
+monban group moderator permission add server lobby chunky.command.start
+monban group moderator permission add server lobby chunky.command.cancel
+```
+
+After assigning the group to a player and reconnecting, `/chunky ` should show the permitted subcommands and `/chunky start` should execute.
+
 Whitelist administration uses Paper/Folia schedulers directly at the platform boundary; there is no generic scheduler abstraction.

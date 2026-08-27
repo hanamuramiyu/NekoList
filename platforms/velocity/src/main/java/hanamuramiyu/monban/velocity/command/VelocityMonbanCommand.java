@@ -14,7 +14,7 @@ public final class VelocityMonbanCommand {
             VelocityAccessCommand accessCommand,
             VelocityStatusCommand statusCommand
     ) {
-        return create(whitelistCommand, null, accessCommand, statusCommand);
+        return create(whitelistCommand, null, accessCommand, statusCommand, null);
     }
 
     public static BrigadierCommand create(
@@ -22,6 +22,16 @@ public final class VelocityMonbanCommand {
             VelocityLookupCommand lookupCommand,
             VelocityAccessCommand accessCommand,
             VelocityStatusCommand statusCommand
+    ) {
+        return create(whitelistCommand, lookupCommand, accessCommand, statusCommand, null);
+    }
+
+    public static BrigadierCommand create(
+            VelocityWhitelistCommand whitelistCommand,
+            VelocityLookupCommand lookupCommand,
+            VelocityAccessCommand accessCommand,
+            VelocityStatusCommand statusCommand,
+            VelocityGroupCommand groupCommand
     ) {
         Objects.requireNonNull(whitelistCommand, "whitelistCommand");
         Objects.requireNonNull(accessCommand, "accessCommand");
@@ -34,7 +44,8 @@ public final class VelocityMonbanCommand {
                             context.getSource().hasPermission(VelocityWhitelistCommand.PERMISSION),
                             lookupCommand != null && context.getSource().hasPermission(VelocityLookupCommand.PERMISSION),
                             context.getSource().hasPermission(VelocityAccessCommand.PERMISSION),
-                            context.getSource().hasPermission(VelocityStatusCommand.PERMISSION)
+                            context.getSource().hasPermission(VelocityStatusCommand.PERMISSION),
+                            groupCommand != null && context.getSource().hasPermission(VelocityGroupCommand.PERMISSION)
                     )
                     .forEach(context.getSource()::sendMessage);
             return com.mojang.brigadier.Command.SINGLE_SUCCESS;
@@ -45,6 +56,10 @@ public final class VelocityMonbanCommand {
         }
         root.then(accessCommand.build());
         root.then(statusCommand.build());
+        if (groupCommand != null) {
+            root.then(groupCommand.buildGroup());
+            root.then(groupCommand.buildUser());
+        }
         return new BrigadierCommand(root);
     }
 }

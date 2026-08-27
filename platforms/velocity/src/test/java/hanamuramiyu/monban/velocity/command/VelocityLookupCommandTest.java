@@ -6,9 +6,16 @@ import com.velocitypowered.api.command.BrigadierCommand;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.proxy.ProxyServer;
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
+import hanamuramiyu.monban.access.effective.PlayerAccessResolver;
+import hanamuramiyu.monban.access.group.PlayerGroupAssignment;
+import hanamuramiyu.monban.access.group.PlayerGroupDefinition;
+import hanamuramiyu.monban.access.group.memory.InMemoryPlayerGroupAssignmentRepository;
+import hanamuramiyu.monban.access.group.memory.InMemoryPlayerGroupRepository;
 import hanamuramiyu.monban.access.grant.AccessGrant;
 import hanamuramiyu.monban.access.grant.AccessGrantRepository;
 import hanamuramiyu.monban.access.grant.memory.InMemoryAccessGrantRepository;
+import hanamuramiyu.monban.access.permission.PermissionGrant;
+import hanamuramiyu.monban.access.permission.memory.InMemoryPlayerPermissionGrantRepository;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.identity.OnlineProfile;
 import hanamuramiyu.monban.identity.OnlineProfileResolutionException;
@@ -95,9 +102,48 @@ class VelocityLookupCommandTest {
         assertTrue(source.messagesContain("Invalid Minecraft player name"));
     }
 
+    @Test
+    void lookupShowsEffectiveGroupsAccessAndPermissions() throws Exception {
+        InMemoryAccessGrantRepository repository = new InMemoryAccessGrantRepository();
+        repository.add(new AccessGrant(AccessScope.network(), PlayerIdentity.online("miyu2", VERIFIED_UUID)));
+        InMemoryPlayerGroupRepository groups = new InMemoryPlayerGroupRepository();
+        groups.add(new PlayerGroupDefinition(
+                "moderator",
+                List.of(AccessScope.server("staff")),
+                List.of(PermissionGrant.server("survival", "coreprotect.inspect"))
+        ));
+        InMemoryPlayerGroupAssignmentRepository assignments = new InMemoryPlayerGroupAssignmentRepository();
+        PlayerIdentity identity = PlayerIdentity.online("miyu2", VERIFIED_UUID);
+        assignments.add(new PlayerGroupAssignment(identity, "moderator"));
+        PlayerAccessResolver resolver = new PlayerAccessResolver(
+                repository,
+                groups,
+                assignments,
+                new InMemoryPlayerPermissionGrantRepository()
+        );
+        CommandDispatcher<CommandSource> dispatcher = dispatcher(repository, name ->
+                CompletableFuture.completedFuture(new OnlineProfile(name, VERIFIED_UUID)), resolver);
+        RecordingCommandSource source = new RecordingCommandSource(VelocityLookupCommand.PERMISSION);
+
+        assertEquals(1, dispatcher.execute("monban lookup miyu2", source.source()));
+
+        assertTrue(source.messagesContain("Groups"));
+        assertTrue(source.messagesContain("moderator"));
+        assertTrue(source.messagesContain("SERVER(staff) — GROUP:moderator"));
+        assertTrue(source.messagesContain("coreprotect.inspect — GROUP:moderator"));
+    }
+
     private static CommandDispatcher<CommandSource> dispatcher(
             AccessGrantRepository repository,
             OnlineProfileResolver profileResolver
+    ) {
+        return dispatcher(repository, profileResolver, null);
+    }
+
+    private static CommandDispatcher<CommandSource> dispatcher(
+            AccessGrantRepository repository,
+            OnlineProfileResolver profileResolver,
+            PlayerAccessResolver accessResolver
     ) {
         AccessGrantAdministrationService administration = new AccessGrantAdministrationService(repository, scope -> {});
         ProxyServer proxy = proxyServerStub(List.of(), List.of());
@@ -106,7 +152,8 @@ class VelocityLookupCommandTest {
                 proxy,
                 Runnable::run,
                 new RecordingLogger().logger(),
-                profileResolver
+                profileResolver,
+                accessResolver
         );
         BrigadierCommand command = lookupCommand(lookup);
         CommandDispatcher<CommandSource> dispatcher = new CommandDispatcher<>();

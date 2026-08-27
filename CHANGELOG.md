@@ -2,6 +2,24 @@
 
 All notable user-facing changes to monban will be documented in this file.
 
+## 3.2.0 — 2026-08-28
+
+Player groups and permissions update.
+
+### Highlights
+
+- Built-in player groups separate from Velocity `SERVER_GROUP` definitions.
+- Group and direct player permissions with `NETWORK`, `SERVER_GROUP`, and `SERVER` scopes.
+- Group ACL grants combined with the existing direct whitelist and scoped access grants.
+- Effective access lookup showing groups, permissions, and their origins.
+- Velocity administration commands for groups, assignments, group permissions, and direct permissions.
+- Centralized state synchronization from Velocity to Bukkit and Paper backends.
+- Local Bukkit/Paper permission attachments without requiring LuckPerms.
+- Fail-closed backend access checks until the first verified synchronized state snapshot is received.
+- Automatic `sync.yml` creation on Velocity when backend permissions are enabled.
+- Correct ONLINE/OFFLINE identity detection on forwarded hybrid backend connections.
+- Backend permission attachments are applied before command visibility is sent to players, with command-tree refresh after permission updates.
+
 ## 3.1.0 — 2026-08-22
 
 Administration & UX update.

@@ -10,6 +10,8 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
 import hanamuramiyu.monban.access.admin.AccessGrantScopeValidationException;
+import hanamuramiyu.monban.access.effective.PlayerAccessResolver;
+import hanamuramiyu.monban.access.effective.PlayerAccessSnapshot;
 import hanamuramiyu.monban.access.grant.AccessGrant;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.identity.OnlineProfile;
@@ -35,6 +37,7 @@ public final class VelocityLookupCommand {
     private final Executor lookupExecutor;
     private final Logger logger;
     private final OnlineProfileResolver profileResolver;
+    private final PlayerAccessResolver accessResolver;
     private final LookupPresentation presentation = new LookupPresentation();
 
     public VelocityLookupCommand(
@@ -43,7 +46,14 @@ public final class VelocityLookupCommand {
             Executor lookupExecutor,
             Logger logger
     ) {
-        this(administrationService, server, lookupExecutor, logger, OnlineProfileResolver.unavailable());
+        this(
+                administrationService,
+                server,
+                lookupExecutor,
+                logger,
+                OnlineProfileResolver.unavailable(),
+                null
+        );
     }
 
     public VelocityLookupCommand(
@@ -53,11 +63,23 @@ public final class VelocityLookupCommand {
             Logger logger,
             OnlineProfileResolver profileResolver
     ) {
+        this(administrationService, server, lookupExecutor, logger, profileResolver, null);
+    }
+
+    public VelocityLookupCommand(
+            AccessGrantAdministrationService administrationService,
+            ProxyServer server,
+            Executor lookupExecutor,
+            Logger logger,
+            OnlineProfileResolver profileResolver,
+            PlayerAccessResolver accessResolver
+    ) {
         this.administrationService = Objects.requireNonNull(administrationService, "administrationService");
         this.server = Objects.requireNonNull(server, "server");
         this.lookupExecutor = Objects.requireNonNull(lookupExecutor, "lookupExecutor");
         this.logger = Objects.requireNonNull(logger, "logger");
         this.profileResolver = Objects.requireNonNull(profileResolver, "profileResolver");
+        this.accessResolver = accessResolver;
     }
 
     public LiteralArgumentBuilder<CommandSource> build() {
@@ -113,7 +135,18 @@ public final class VelocityLookupCommand {
             return;
         }
 
-        presentation.result(offlineIdentity, onlineIdentity, grants)
+        PlayerAccessSnapshot snapshot = null;
+        if (accessResolver != null) {
+            try {
+                PlayerIdentity effectiveIdentity = onlineIdentity.orElse(offlineIdentity);
+                snapshot = accessResolver.resolve(effectiveIdentity);
+            } catch (RuntimeException exception) {
+                logger.error("Failed to resolve effective access for player {}.", offlineIdentity.name(), exception);
+                source.sendMessage(presentation.readFailure());
+                return;
+            }
+        }
+        presentation.result(offlineIdentity, onlineIdentity, grants, snapshot)
                 .forEach(source::sendMessage);
     }
 

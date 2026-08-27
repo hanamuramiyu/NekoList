@@ -123,7 +123,8 @@ final class VelocityCommandTestSupport {
                             VelocityWhitelistCommand.PERMISSION,
                             VelocityLookupCommand.PERMISSION,
                             VelocityAccessCommand.PERMISSION,
-                            VelocityStatusCommand.PERMISSION
+                            VelocityStatusCommand.PERMISSION,
+                            VelocityGroupCommand.PERMISSION
                     )
                     : Set.of();
         }

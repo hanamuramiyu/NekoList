@@ -4,10 +4,18 @@ import hanamuramiyu.monban.access.PlayerAccessService;
 import hanamuramiyu.monban.access.WhitelistPolicy;
 import hanamuramiyu.monban.access.admin.AccessGrantAdministrationService;
 import hanamuramiyu.monban.access.admin.AccessGrantScopeValidationException;
+import hanamuramiyu.monban.access.backend.BackendPermissionConfiguration;
+import hanamuramiyu.monban.config.BackendPermissionSettings;
+import hanamuramiyu.monban.access.backend.BackendPermissionService;
+import hanamuramiyu.monban.access.effective.PlayerAccessResolver;
 import hanamuramiyu.monban.access.grant.AccessGrantLookup;
+import hanamuramiyu.monban.access.grant.AccessGrantInventory;
 import hanamuramiyu.monban.access.grant.AccessGrantRepository;
 import hanamuramiyu.monban.access.grant.WhitelistAccessGrantRepository;
 import hanamuramiyu.monban.access.scope.AccessScope;
+import hanamuramiyu.monban.access.group.PlayerGroupAssignmentRepository;
+import hanamuramiyu.monban.access.group.PlayerGroupRepository;
+import hanamuramiyu.monban.access.group.ServerGroupCatalog;
 import hanamuramiyu.monban.bukkit.command.BukkitMonbanCommand;
 import hanamuramiyu.monban.bukkit.command.BukkitWhitelistCommand;
 import hanamuramiyu.monban.bukkit.presentation.BukkitAdventureSender;
@@ -15,11 +23,23 @@ import hanamuramiyu.monban.bukkit.whitelist.BukkitNativeWhitelistGuard;
 import hanamuramiyu.monban.config.MonbanConfig;
 import hanamuramiyu.monban.config.WhitelistSettings;
 import hanamuramiyu.monban.config.file.FileMonbanConfigLoader;
+import hanamuramiyu.monban.config.file.FileSyncSecretLoader;
+import hanamuramiyu.monban.config.file.FileServerGroupsConfigLoader;
 import hanamuramiyu.monban.deployment.DeploymentMode;
 import hanamuramiyu.monban.identity.PlayerIdentityResolver;
 import hanamuramiyu.monban.identity.OfficialOnlineProfileResolver;
 import hanamuramiyu.monban.storage.file.whitelist.FileWhitelistRepository;
+import hanamuramiyu.monban.storage.file.group.FilePlayerGroupAssignmentRepository;
+import hanamuramiyu.monban.storage.file.group.FilePlayerGroupRepository;
+import hanamuramiyu.monban.storage.file.permission.FilePlayerPermissionGrantRepository;
 import hanamuramiyu.monban.whitelist.WhitelistRepository;
+import hanamuramiyu.monban.bukkit.permission.BukkitPermissionAttachmentListener;
+import hanamuramiyu.monban.bukkit.permission.BukkitPermissionAttachmentManager;
+import hanamuramiyu.monban.bukkit.sync.BukkitStateSyncListener;
+import hanamuramiyu.monban.sync.PlayerAccessStateReceiver;
+import hanamuramiyu.monban.sync.PlayerAccessStateCodec;
+import hanamuramiyu.monban.sync.SyncSecret;
+import hanamuramiyu.monban.sync.SyncChannel;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
@@ -40,6 +60,9 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
     private PlayerAccessService playerAccessService;
     private WhitelistPolicy whitelistPolicy;
     private OfficialOnlineProfileResolver profileResolver;
+    private BukkitPermissionAttachmentManager permissionAttachmentManager;
+    private BukkitStateSyncListener stateSyncListener;
+    private boolean backendPermissionsEnabled;
 
     @Override
     public void onEnable() {
@@ -77,7 +100,36 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
             repository = new FileWhitelistRepository(dataDirectory.resolve("whitelist.yml"));
             networkRepository = new WhitelistAccessGrantRepository(repository);
             AccessGrantLookup grantLookup = networkRepository;
-            PlayerAccessService accessService = new PlayerAccessService(loadedConfig, resolver, grantLookup, runtimeWhitelistPolicy);
+            PlayerAccessResolver accessResolver = loadPermissionResolver(dataDirectory, networkRepository);
+            BackendPermissionSettings backendSettings = loadedConfig.backendPermissions();
+            boolean backendPermissionsEnabled = backendSettings.enabled();
+            this.backendPermissionsEnabled = backendPermissionsEnabled;
+            var backendServerName = backendSettings.serverName();
+            Path syncFile = dataDirectory.resolve("sync.yml");
+            SyncSecret syncSecret = backendPermissionsEnabled
+                    ? new FileSyncSecretLoader(syncFile).load().orElse(null)
+                    : null;
+            if (backendPermissionsEnabled && syncSecret == null) {
+                throw new IllegalStateException(
+                        "backend-permissions.enabled requires sync.yml at " + syncFile.toAbsolutePath()
+                );
+            }
+            BackendPermissionConfiguration.requireSynchronization(
+                    backendPermissionsEnabled,
+                    backendServerName,
+                    syncSecret
+            );
+            PlayerAccessStateReceiver stateReceiver = syncSecret == null
+                    ? null
+                    : new PlayerAccessStateReceiver(new PlayerAccessStateCodec(), syncSecret);
+            PlayerAccessService accessService = new PlayerAccessService(
+                    loadedConfig,
+                    resolver,
+                    grantLookup,
+                    runtimeWhitelistPolicy,
+                    accessResolver,
+                    stateReceiver
+            );
             loadedEntries = repository.findAll().size();
 
             this.config = loadedConfig;
@@ -88,8 +140,51 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
             this.profileResolver = onlineProfileResolver;
             this.whitelistPolicy = runtimeWhitelistPolicy;
 
-            getServer().getPluginManager().registerEvents(new BukkitPlayerLoginListener(this, accessService), this);
-            getServer().getPluginManager().registerEvents(new BukkitNativeWhitelistGuard(), this);
+            if (backendServerName.isPresent()) {
+                String serverName = backendServerName.orElseThrow();
+                try {
+                    BukkitPermissionAttachmentManager manager = new BukkitPermissionAttachmentManager(
+                            this,
+                            new BackendPermissionService(
+                                    accessResolver,
+                                    new FileServerGroupsConfigLoader(dataDirectory.resolve("server-groups.yml")).load(),
+                                    serverName,
+                                    stateReceiver
+                            )
+                    );
+                    this.permissionAttachmentManager = manager;
+                    getServer().getPluginManager().registerEvents(
+                            new BukkitPermissionAttachmentListener(
+                                    resolver,
+                                    getServer().getOnlineMode(),
+                                    manager
+                            ),
+                            this
+                    );
+                } catch (Exception exception) {
+                    throw new IllegalStateException("Failed to initialize backend permissions.", exception);
+                }
+            }
+
+            if (stateReceiver != null) {
+                BukkitStateSyncListener listener = new BukkitStateSyncListener(
+                        stateReceiver,
+                        permissionAttachmentManager == null
+                                ? () -> {
+                                }
+                                : permissionAttachmentManager::refreshAll
+                );
+                getServer().getMessenger().registerIncomingPluginChannel(this, SyncChannel.ID, listener);
+                this.stateSyncListener = listener;
+            }
+
+            if (!backendPermissionsEnabled) {
+                getServer().getPluginManager().registerEvents(new BukkitPlayerLoginListener(this, accessService), this);
+            }
+            getServer().getPluginManager().registerEvents(
+                    new BukkitNativeWhitelistGuard(backendPermissionsEnabled),
+                    this
+            );
 
             AsyncPlayerPreLoginEvent.getHandlerList().unregister(startupGuard);
         } catch (Exception exception) {
@@ -113,7 +208,16 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
                     networkRepository,
                     MonbanBukkitPlugin::validateNetworkAdministrativeScope
             );
-            registerManagementCommand(administrationService);
+            if (!this.backendPermissionsEnabled) {
+                registerManagementCommand(administrationService);
+            } else {
+                PluginCommand command = getCommand("monban");
+                if (command != null) {
+                    BukkitMonbanCommand managedCommand = new BukkitMonbanCommand(true);
+                    command.setExecutor(managedCommand);
+                    command.setTabCompleter(managedCommand);
+                }
+            }
             this.accessGrantAdministrationService = administrationService;
         } catch (RuntimeException exception) {
             getLogger().log(
@@ -130,6 +234,17 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
         WhitelistRepository repository = this.whitelistRepository;
 
         this.playerAccessService = null;
+        this.backendPermissionsEnabled = false;
+        BukkitPermissionAttachmentManager attachmentManager = this.permissionAttachmentManager;
+        this.permissionAttachmentManager = null;
+        if (attachmentManager != null) {
+            attachmentManager.clearAll();
+        }
+        BukkitStateSyncListener stateListener = this.stateSyncListener;
+        this.stateSyncListener = null;
+        if (stateListener != null) {
+            getServer().getMessenger().unregisterIncomingPluginChannel(this, SyncChannel.ID, stateListener);
+        }
         this.whitelistPolicy = null;
         this.accessGrantAdministrationService = null;
         this.whitelistRepository = null;
@@ -177,7 +292,8 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
                 enabled -> loadedConfigLoader.save(new MonbanConfig(
                         loadedConfig.deployment(),
                         new WhitelistSettings(enabled),
-                        loadedConfig.identity()
+                        loadedConfig.identity(),
+                        loadedConfig.backendPermissions()
                 ))
         );
         BukkitMonbanCommand rootCommand = new BukkitMonbanCommand(whitelistCommand);
@@ -201,5 +317,19 @@ public final class MonbanBukkitPlugin extends JavaPlugin {
                             + "do not use the backend plugin as the network authority."
             );
         }
+    }
+
+    private static PlayerAccessResolver loadPermissionResolver(
+            Path dataDirectory,
+            AccessGrantInventory networkRepository
+    ) throws Exception {
+        PlayerGroupRepository groups = new FilePlayerGroupRepository(dataDirectory.resolve("player-groups.yml"));
+        PlayerGroupAssignmentRepository assignments = new FilePlayerGroupAssignmentRepository(
+                dataDirectory.resolve("group-assignments.yml")
+        );
+        FilePlayerPermissionGrantRepository permissions = new FilePlayerPermissionGrantRepository(
+                dataDirectory.resolve("player-permissions.yml")
+        );
+        return new PlayerAccessResolver(networkRepository, groups, assignments, permissions);
     }
 }

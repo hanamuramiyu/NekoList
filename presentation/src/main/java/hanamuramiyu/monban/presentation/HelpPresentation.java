@@ -17,8 +17,18 @@ public final class HelpPresentation {
     }
 
     public List<Component> lines(boolean whitelist, boolean lookup, boolean access, boolean status) {
+        return lines(whitelist, lookup, access, status, false);
+    }
+
+    public List<Component> lines(
+            boolean whitelist,
+            boolean lookup,
+            boolean access,
+            boolean status,
+            boolean group
+    ) {
         List<Component> lines = new ArrayList<>();
-        lines.add(ui.title("3.1.0"));
+        lines.add(ui.title("3.2.0"));
         lines.add(ui.muted("────────────────────────────"));
         if (whitelist) {
             lines.add(entry("/monban whitelist", "Manage network whitelist"));
@@ -31,6 +41,9 @@ public final class HelpPresentation {
         }
         if (status) {
             lines.add(entry("/monban status", "View access status"));
+        }
+        if (group) {
+            lines.add(entry("/monban group", "Manage player groups and permissions"));
         }
         if (lines.size() == 2) {
             lines.add(ui.unknownCommand());

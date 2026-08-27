@@ -48,6 +48,7 @@ public final class VelocityAccessCommand {
     private final Logger logger;
     private final AccessPresentation presentation;
     private final OnlineProfileResolver profileResolver;
+    private final Runnable stateChanged;
 
     public VelocityAccessCommand(
             AccessGrantAdministrationService administrationService,
@@ -56,7 +57,16 @@ public final class VelocityAccessCommand {
             Executor mutationExecutor,
             Logger logger
     ) {
-        this(administrationService, serverGroupCatalog, server, mutationExecutor, logger, OnlineProfileResolver.unavailable());
+        this(
+                administrationService,
+                serverGroupCatalog,
+                server,
+                mutationExecutor,
+                logger,
+                OnlineProfileResolver.unavailable(),
+                () -> {
+                }
+        );
     }
 
     public VelocityAccessCommand(
@@ -67,6 +77,19 @@ public final class VelocityAccessCommand {
             Logger logger,
             OnlineProfileResolver profileResolver
     ) {
+        this(administrationService, serverGroupCatalog, server, mutationExecutor, logger, profileResolver, () -> {
+        });
+    }
+
+    public VelocityAccessCommand(
+            AccessGrantAdministrationService administrationService,
+            ServerGroupCatalog serverGroupCatalog,
+            ProxyServer server,
+            Executor mutationExecutor,
+            Logger logger,
+            OnlineProfileResolver profileResolver,
+            Runnable stateChanged
+    ) {
         this.administrationService = Objects.requireNonNull(administrationService, "administrationService");
         this.serverGroupCatalog = Objects.requireNonNull(serverGroupCatalog, "serverGroupCatalog");
         this.server = Objects.requireNonNull(server, "server");
@@ -74,6 +97,7 @@ public final class VelocityAccessCommand {
         this.logger = Objects.requireNonNull(logger, "logger");
         this.presentation = new AccessPresentation();
         this.profileResolver = Objects.requireNonNull(profileResolver, "profileResolver");
+        this.stateChanged = Objects.requireNonNull(stateChanged, "stateChanged");
     }
 
     public LiteralArgumentBuilder<CommandSource> build() {
@@ -397,7 +421,10 @@ public final class VelocityAccessCommand {
     private void sendGrantResult(CommandSource source, AccessScope scope, PlayerIdentity identity) {
         AccessGrantAddResult result = administrationService.grant(new AccessGrant(scope, identity));
         switch (result) {
-            case ADDED -> source.sendMessage(presentation.added(scope, identity));
+            case ADDED -> {
+                source.sendMessage(presentation.added(scope, identity));
+                notifyStateChanged();
+            }
             case ALREADY_EXISTS -> source.sendMessage(presentation.alreadyExists());
         }
     }
@@ -405,8 +432,19 @@ public final class VelocityAccessCommand {
     private void sendRevokeResult(CommandSource source, AccessScope scope, PlayerIdentity identity) {
         AccessGrantRemoveResult result = administrationService.revoke(scope, identity);
         switch (result) {
-            case REMOVED -> source.sendMessage(presentation.removed(scope, identity));
+            case REMOVED -> {
+                source.sendMessage(presentation.removed(scope, identity));
+                notifyStateChanged();
+            }
             case NOT_FOUND -> source.sendMessage(presentation.notFound());
+        }
+    }
+
+    private void notifyStateChanged() {
+        try {
+            stateChanged.run();
+        } catch (RuntimeException exception) {
+            logger.error("Failed to broadcast updated monban state.", exception);
         }
     }
 

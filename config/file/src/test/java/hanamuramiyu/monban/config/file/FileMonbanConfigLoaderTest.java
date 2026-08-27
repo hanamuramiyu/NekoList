@@ -1,6 +1,7 @@
 package hanamuramiyu.monban.config.file;
 
 import hanamuramiyu.monban.config.DeploymentSettings;
+import hanamuramiyu.monban.config.BackendPermissionSettings;
 import hanamuramiyu.monban.config.HybridIdentityPreference;
 import hanamuramiyu.monban.config.HybridIdentitySettings;
 import hanamuramiyu.monban.config.IdentitySettings;
@@ -38,6 +39,7 @@ class FileMonbanConfigLoaderTest {
         assertEquals(HybridIdentityPreference.ONLINE, config.identity().hybrid().dualEntryPreference());
         assertEquals(standaloneConfig(false, "AUTO"), Files.readString(file, StandardCharsets.UTF_8));
         assertFalse(Files.readString(file, StandardCharsets.UTF_8).contains("hybrid:"));
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("backend-permissions:"));
     }
 
     @Test
@@ -51,6 +53,7 @@ class FileMonbanConfigLoaderTest {
         assertEquals(velocityDefaults, config);
         assertEquals(velocityConfig(false, "AUTO", false, "ONLINE"), Files.readString(file, StandardCharsets.UTF_8));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("hybrid:"));
+        assertFalse(Files.readString(file, StandardCharsets.UTF_8).contains("server-name:"));
     }
 
     @Test
@@ -108,6 +111,113 @@ class FileMonbanConfigLoaderTest {
         assertEquals(IdentityResolutionMode.AUTO, config.identity().mode());
         assertTrue(config.identity().hybrid().enabled());
         assertEquals(HybridIdentityPreference.OFFLINE, config.identity().hybrid().dualEntryPreference());
+    }
+
+    @Test
+    void loadsBackendPermissionSettingsFromConfig() throws IOException {
+        Path file = writeConfig("""
+                config-version: 1
+                deployment:
+                  mode: STANDALONE
+                whitelist:
+                  enabled: true
+                identity:
+                  mode: AUTO
+                backend-permissions:
+                  enabled: true
+                  server-name: survival
+                """);
+
+        MonbanConfig config = new FileMonbanConfigLoader(file).load();
+
+        assertEquals(
+                new BackendPermissionSettings(true, java.util.Optional.of("survival")),
+                config.backendPermissions()
+        );
+    }
+
+    @Test
+    void addsBackendPermissionDefaultsToExistingConfig() throws IOException {
+        Path file = writeConfig("""
+                config-version: 1
+                deployment:
+                  mode: STANDALONE
+                whitelist:
+                  enabled: false
+                identity:
+                  mode: AUTO
+                """);
+
+        MonbanConfig config = new FileMonbanConfigLoader(file).load();
+        String content = Files.readString(file, StandardCharsets.UTF_8);
+
+        assertEquals(BackendPermissionSettings.defaults(), config.backendPermissions());
+        assertTrue(content.contains("backend-permissions:\n  enabled: false\n  server-name: ''\n"));
+        assertTrue(content.startsWith("config-version: 1\ndeployment:"));
+    }
+
+    @Test
+    void removesBackendServerNameFromExistingVelocityConfig() throws IOException {
+        Path file = writeConfig("""
+                config-version: 1
+                deployment:
+                  mode: VELOCITY
+                whitelist:
+                  enabled: false
+                identity:
+                  mode: AUTO
+                  hybrid:
+                    enabled: false
+                    dual-entry-preference: ONLINE
+                backend-permissions:
+                  enabled: true
+                  server-name: ''
+                """);
+
+        MonbanConfig config = new FileMonbanConfigLoader(file).load();
+        String content = Files.readString(file, StandardCharsets.UTF_8);
+
+        assertEquals(new BackendPermissionSettings(true, java.util.Optional.empty()), config.backendPermissions());
+        assertTrue(content.contains("backend-permissions:\n  enabled: true\n"));
+        assertFalse(content.contains("server-name:"));
+    }
+
+    @Test
+    void emptyBackendServerNameIsAllowedWhileBackendPermissionsAreDisabled() throws IOException {
+        Path file = writeConfig("""
+                config-version: 1
+                deployment:
+                  mode: STANDALONE
+                whitelist:
+                  enabled: false
+                identity:
+                  mode: AUTO
+                backend-permissions:
+                  enabled: false
+                  server-name: ''
+                """);
+
+        MonbanConfig config = new FileMonbanConfigLoader(file).load();
+
+        assertEquals(BackendPermissionSettings.defaults(), config.backendPermissions());
+    }
+
+    @Test
+    void emptyBackendServerNameIsRejectedWhenBackendPermissionsAreEnabled() throws IOException {
+        Path file = writeConfig("""
+                config-version: 1
+                deployment:
+                  mode: STANDALONE
+                whitelist:
+                  enabled: false
+                identity:
+                  mode: AUTO
+                backend-permissions:
+                  enabled: true
+                  server-name: ''
+                """);
+
+        assertThrows(IOException.class, () -> new FileMonbanConfigLoader(file).load());
     }
 
     @Test
@@ -352,6 +462,9 @@ class FileMonbanConfigLoaderTest {
                   enabled: %s
                 identity:
                   mode: %s
+                backend-permissions:
+                  enabled: false
+                  server-name: ''
                 """.formatted(whitelistEnabled, identityMode);
     }
 
@@ -382,6 +495,8 @@ class FileMonbanConfigLoaderTest {
                   hybrid:
                     enabled: %s
                     dual-entry-preference: %s
+                backend-permissions:
+                  enabled: false
                 """.formatted(
                 deploymentMode,
                 whitelistEnabled,

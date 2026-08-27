@@ -1,6 +1,7 @@
 package hanamuramiyu.monban.config.file;
 
 import hanamuramiyu.monban.config.DeploymentSettings;
+import hanamuramiyu.monban.config.BackendPermissionSettings;
 import hanamuramiyu.monban.config.HybridIdentityPreference;
 import hanamuramiyu.monban.config.HybridIdentitySettings;
 import hanamuramiyu.monban.config.IdentitySettings;
@@ -36,6 +37,8 @@ public final class FileMonbanConfigLoader {
     private static final String DEPLOYMENT_KEY = "deployment";
     private static final String WHITELIST_KEY = "whitelist";
     private static final String IDENTITY_KEY = "identity";
+    private static final String BACKEND_PERMISSIONS_KEY = "backend-permissions";
+    private static final String SERVER_NAME_KEY = "server-name";
     private static final String HYBRID_KEY = "hybrid";
     private static final String ENABLED_KEY = "enabled";
     private static final String MODE_KEY = "mode";
@@ -45,13 +48,15 @@ public final class FileMonbanConfigLoader {
             CONFIG_VERSION_KEY,
             DEPLOYMENT_KEY,
             WHITELIST_KEY,
-            IDENTITY_KEY
+            IDENTITY_KEY,
+            BACKEND_PERMISSIONS_KEY
     );
     private static final Set<String> DEPLOYMENT_FIELDS = Set.of(MODE_KEY);
     private static final Set<String> WHITELIST_FIELDS = Set.of(ENABLED_KEY);
     private static final Set<String> STANDALONE_IDENTITY_FIELDS = Set.of(MODE_KEY);
     private static final Set<String> VELOCITY_IDENTITY_FIELDS = Set.of(MODE_KEY, HYBRID_KEY);
     private static final Set<String> HYBRID_FIELDS = Set.of(ENABLED_KEY, DUAL_ENTRY_PREFERENCE_KEY);
+    private static final Set<String> BACKEND_PERMISSIONS_FIELDS = Set.of(ENABLED_KEY, SERVER_NAME_KEY);
 
     private final Path file;
     private final MonbanConfig creationDefaults;
@@ -143,12 +148,25 @@ public final class FileMonbanConfigLoader {
             }
         };
 
+        boolean backendPermissionsMissing = !root.containsKey(BACKEND_PERMISSIONS_KEY);
+        boolean velocityServerNamePresent = deploymentMode == DeploymentMode.VELOCITY
+                && root.get(BACKEND_PERMISSIONS_KEY) instanceof Map<?, ?> backendPermissionsSection
+                && backendPermissionsSection.containsKey(SERVER_NAME_KEY);
+        BackendPermissionSettings backendPermissions = parseBackendPermissions(
+                root.get(BACKEND_PERMISSIONS_KEY),
+                deploymentMode
+        );
+
         MonbanConfig config = new MonbanConfig(
                 new DeploymentSettings(deploymentMode),
                 new WhitelistSettings(whitelistEnabled),
-                new IdentitySettings(identityMode, hybridSettings)
+                new IdentitySettings(identityMode, hybridSettings),
+                backendPermissions
         );
         validateHybridConfiguration(config);
+        if (backendPermissionsMissing || velocityServerNamePresent) {
+            migrateBackendPermissions(yamlText, config);
+        }
         return config;
     }
 
@@ -213,8 +231,17 @@ public final class FileMonbanConfigLoader {
         return serializeConfig(creationDefaults);
     }
 
+    private void migrateBackendPermissions(String yamlText, MonbanConfig config) throws IOException {
+        if (config.deployment().mode() == DeploymentMode.VELOCITY) {
+            writeAtomically(serializeConfig(config));
+            return;
+        }
+        String separator = yamlText.endsWith("\n") ? "" : "\n";
+        writeAtomically(yamlText + separator + serializeBackendPermissions(config.backendPermissions(), true));
+    }
+
     private String serializeConfig(MonbanConfig config) {
-        return switch (config.deployment().mode()) {
+        String base = switch (config.deployment().mode()) {
             case STANDALONE -> """
                     config-version: %d
                     deployment:
@@ -247,6 +274,58 @@ public final class FileMonbanConfigLoader {
                     config.identity().hybrid().dualEntryPreference().name()
             );
         };
+        return base + serializeBackendPermissions(
+                config.backendPermissions(),
+                config.deployment().mode() == DeploymentMode.STANDALONE
+        );
+    }
+
+    private static BackendPermissionSettings parseBackendPermissions(
+            Object value,
+            DeploymentMode deploymentMode
+    ) throws IOException {
+        if (value == null) {
+            return BackendPermissionSettings.defaults();
+        }
+        Map<String, Object> section = requireStringMap(value, BACKEND_PERMISSIONS_KEY);
+        rejectUnknownFields(section, BACKEND_PERMISSIONS_FIELDS, BACKEND_PERMISSIONS_KEY);
+        boolean enabled = requireBoolean(
+                section.get(ENABLED_KEY),
+                BACKEND_PERMISSIONS_KEY + "." + ENABLED_KEY
+        );
+        Object serverNameValue = section.get(SERVER_NAME_KEY);
+        if (serverNameValue == null) {
+            return new BackendPermissionSettings(enabled, java.util.Optional.empty());
+        }
+        if (!(serverNameValue instanceof String serverName)) {
+            throw new IOException("Expected server name at " + BACKEND_PERMISSIONS_KEY + "." + SERVER_NAME_KEY);
+        }
+        if (deploymentMode == DeploymentMode.VELOCITY) {
+            return new BackendPermissionSettings(enabled, java.util.Optional.empty());
+        }
+        if (serverName.isEmpty() && !enabled) {
+            return BackendPermissionSettings.defaults();
+        }
+        try {
+            return new BackendPermissionSettings(enabled, java.util.Optional.of(serverName));
+        } catch (RuntimeException exception) {
+            throw new IOException("Invalid server name at " + BACKEND_PERMISSIONS_KEY + "." + SERVER_NAME_KEY, exception);
+        }
+    }
+
+    private static String serializeBackendPermissions(
+            BackendPermissionSettings settings,
+            boolean includeServerName
+    ) {
+        String result = "backend-permissions:\n"
+                + "  enabled: " + settings.enabled() + "\n";
+        if (!includeServerName) {
+            return result;
+        }
+        String serverName = settings.serverName()
+                .map(value -> "'" + value.replace("'", "''") + "'")
+                .orElse("''");
+        return result + "  server-name: " + serverName + "\n";
     }
 
     private void rejectAliases(String yamlText) throws IOException {

@@ -2,6 +2,7 @@ package hanamuramiyu.monban.identity;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,5 +42,32 @@ class PlayerIdentityResolverTest {
         assertEquals(IdentityType.OFFLINE, identity.type());
         assertEquals(UUID_ONE, identity.technicalUuid().orElseThrow());
         assertTrue(identity.verifiedUuid().isEmpty());
+    }
+
+    @Test
+    void backendTreatsOfflineForwardedPlayerAsOfflineDespiteProxyOnlineMode() {
+        UUID offlineUuid = UUID.nameUUIDFromBytes(
+                "OfflinePlayer:hanamuramiyu".getBytes(StandardCharsets.UTF_8)
+        );
+        PlayerIdentity identity = new PlayerIdentityResolver(IdentityResolutionMode.AUTO)
+                .resolveBackend("hanamuramiyu", offlineUuid, true);
+
+        assertEquals(IdentityType.OFFLINE, identity.type());
+    }
+
+    @Test
+    void backendKeepsAuthenticatedForwardedPlayerOnline() {
+        PlayerIdentity identity = new PlayerIdentityResolver(IdentityResolutionMode.AUTO)
+                .resolveBackend("hanamuramiyu", UUID_ONE, true);
+
+        assertEquals(IdentityType.ONLINE, identity.type());
+    }
+
+    @Test
+    void backendKeepsOnlineForwardedPlayerOnlineWhenProxyModeIsOffline() {
+        PlayerIdentity identity = new PlayerIdentityResolver(IdentityResolutionMode.AUTO)
+                .resolveBackend("hanamuramiyu", UUID_ONE, false);
+
+        assertEquals(IdentityType.ONLINE, identity.type());
     }
 }

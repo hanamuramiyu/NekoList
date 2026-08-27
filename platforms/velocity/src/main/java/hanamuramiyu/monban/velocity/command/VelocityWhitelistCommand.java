@@ -47,6 +47,7 @@ public final class VelocityWhitelistCommand {
     private final OnlineProfileResolver profileResolver;
     private final WhitelistPolicy whitelistPolicy;
     private final WhitelistStateStore whitelistStateStore;
+    private final Runnable stateChanged;
     private final WhitelistPresentation presentation = new WhitelistPresentation();
 
     public VelocityWhitelistCommand(
@@ -63,6 +64,8 @@ public final class VelocityWhitelistCommand {
                 OnlineProfileResolver.unavailable(),
                 new WhitelistPolicy(false),
                 enabled -> {
+                },
+                () -> {
                 }
         );
     }
@@ -82,6 +85,8 @@ public final class VelocityWhitelistCommand {
                 profileResolver,
                 new WhitelistPolicy(false),
                 enabled -> {
+                },
+                () -> {
                 }
         );
     }
@@ -95,6 +100,29 @@ public final class VelocityWhitelistCommand {
             WhitelistPolicy whitelistPolicy,
             WhitelistStateStore whitelistStateStore
     ) {
+        this(
+                administrationService,
+                server,
+                mutationExecutor,
+                logger,
+                profileResolver,
+                whitelistPolicy,
+                whitelistStateStore,
+                () -> {
+                }
+        );
+    }
+
+    public VelocityWhitelistCommand(
+            AccessGrantAdministrationService administrationService,
+            ProxyServer server,
+            Executor mutationExecutor,
+            Logger logger,
+            OnlineProfileResolver profileResolver,
+            WhitelistPolicy whitelistPolicy,
+            WhitelistStateStore whitelistStateStore,
+            Runnable stateChanged
+    ) {
         this.administrationService = Objects.requireNonNull(administrationService, "administrationService");
         this.server = Objects.requireNonNull(server, "server");
         this.mutationExecutor = Objects.requireNonNull(mutationExecutor, "mutationExecutor");
@@ -102,6 +130,7 @@ public final class VelocityWhitelistCommand {
         this.profileResolver = Objects.requireNonNull(profileResolver, "profileResolver");
         this.whitelistPolicy = Objects.requireNonNull(whitelistPolicy, "whitelistPolicy");
         this.whitelistStateStore = Objects.requireNonNull(whitelistStateStore, "whitelistStateStore");
+        this.stateChanged = Objects.requireNonNull(stateChanged, "stateChanged");
     }
 
     public LiteralArgumentBuilder<CommandSource> build() {
@@ -344,16 +373,30 @@ public final class VelocityWhitelistCommand {
 
     private void sendAddResult(CommandSource source, PlayerIdentity identity) {
         AccessGrantAddResult result = administrationService.grant(new AccessGrant(NETWORK_SCOPE, identity));
-        source.sendMessage(result == AccessGrantAddResult.ADDED
-                ? presentation.added(identity)
-                : presentation.alreadyExists());
+        if (result == AccessGrantAddResult.ADDED) {
+            source.sendMessage(presentation.added(identity));
+            notifyStateChanged();
+        } else {
+            source.sendMessage(presentation.alreadyExists());
+        }
     }
 
     private void sendRemoveResult(CommandSource source, PlayerIdentity identity) {
         AccessGrantRemoveResult result = administrationService.revoke(NETWORK_SCOPE, identity);
-        source.sendMessage(result == AccessGrantRemoveResult.REMOVED
-                ? presentation.removed(identity)
-                : presentation.notFound());
+        if (result == AccessGrantRemoveResult.REMOVED) {
+            source.sendMessage(presentation.removed(identity));
+            notifyStateChanged();
+        } else {
+            source.sendMessage(presentation.notFound());
+        }
+    }
+
+    private void notifyStateChanged() {
+        try {
+            stateChanged.run();
+        } catch (RuntimeException exception) {
+            logger.error("Failed to broadcast updated monban state.", exception);
+        }
     }
 
     private SuggestionProvider<CommandSource> playerSuggestions() {

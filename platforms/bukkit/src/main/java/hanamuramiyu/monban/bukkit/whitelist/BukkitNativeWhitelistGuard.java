@@ -18,6 +18,15 @@ public final class BukkitNativeWhitelistGuard implements Listener {
             "minecraft:whitelist",
             "bukkit:whitelist"
     );
+    private final boolean backendPermissionsEnabled;
+
+    public BukkitNativeWhitelistGuard() {
+        this(false);
+    }
+
+    public BukkitNativeWhitelistGuard(boolean backendPermissionsEnabled) {
+        this.backendPermissionsEnabled = backendPermissionsEnabled;
+    }
 
     public static void requireDisabledAtStartup(Server server) {
         if (server.hasWhitelist()) {
@@ -37,7 +46,7 @@ public final class BukkitNativeWhitelistGuard implements Listener {
             return;
         }
         event.setCancelled(true);
-        sendBlockedMessage(event.getPlayer());
+        sendBlockedMessage(event.getPlayer(), backendPermissionsEnabled);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -46,7 +55,7 @@ public final class BukkitNativeWhitelistGuard implements Listener {
             return;
         }
         event.setCancelled(true);
-        sendBlockedMessage(event.getSender());
+        sendBlockedMessage(event.getSender(), backendPermissionsEnabled);
     }
 
     static boolean isNativeWhitelistCommand(String commandLine) {
@@ -63,8 +72,17 @@ public final class BukkitNativeWhitelistGuard implements Listener {
     }
 
     static void sendBlockedMessage(CommandSender sender) {
+        sendBlockedMessage(sender, false);
+    }
+
+    static void sendBlockedMessage(CommandSender sender, boolean backendPermissionsEnabled) {
         if (!sender.hasPermission(BukkitWhitelistCommand.PERMISSION)) {
             sender.sendMessage("Unknown command. Type \"/help\" for help.");
+            return;
+        }
+        if (backendPermissionsEnabled) {
+            sender.sendMessage("§c✕ §fWhitelist administration is controlled by monban on Velocity.");
+            sender.sendMessage("§7Use /monban whitelist ... on the Velocity proxy.");
             return;
         }
         sender.sendMessage("§c✕ §fThe vanilla Minecraft whitelist is disabled while monban is active.");

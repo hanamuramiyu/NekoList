@@ -2,6 +2,13 @@ package hanamuramiyu.monban.access.backend;
 
 import hanamuramiyu.monban.access.grant.AccessGrant;
 import hanamuramiyu.monban.access.grant.AccessGrantLookup;
+import hanamuramiyu.monban.access.grant.memory.InMemoryAccessGrantRepository;
+import hanamuramiyu.monban.access.effective.PlayerAccessResolver;
+import hanamuramiyu.monban.access.group.PlayerGroupAssignment;
+import hanamuramiyu.monban.access.group.PlayerGroupDefinition;
+import hanamuramiyu.monban.access.group.memory.InMemoryPlayerGroupAssignmentRepository;
+import hanamuramiyu.monban.access.group.memory.InMemoryPlayerGroupRepository;
+import hanamuramiyu.monban.access.permission.memory.InMemoryPlayerPermissionGrantRepository;
 import hanamuramiyu.monban.access.scope.AccessScope;
 import hanamuramiyu.monban.identity.PlayerIdentity;
 import org.junit.jupiter.api.Test;
@@ -89,6 +96,30 @@ class BackendAdmissionServiceTest {
                 service(BackendAccessMode.GRANT_REQUIRED, Map.of(), Map.of(), lookup)
                         .evaluate(BackendTarget.ungrouped("dev"), IDENTITY));
         assertEquals(List.of(AccessScope.server("dev")), lookup.scopes);
+    }
+
+    @Test void restrictedServerAllowsGroupServerGrant() {
+        InMemoryAccessGrantRepository directGrants = new InMemoryAccessGrantRepository();
+        InMemoryPlayerGroupRepository groups = new InMemoryPlayerGroupRepository();
+        InMemoryPlayerGroupAssignmentRepository assignments = new InMemoryPlayerGroupAssignmentRepository();
+        groups.add(new PlayerGroupDefinition("moderator", List.of(AccessScope.server("survival")), List.of()));
+        assignments.add(new PlayerGroupAssignment(IDENTITY, "moderator"));
+        PlayerAccessResolver resolver = new PlayerAccessResolver(
+                directGrants,
+                groups,
+                assignments,
+                new InMemoryPlayerPermissionGrantRepository()
+        );
+        BackendAdmissionService service = new BackendAdmissionService(
+                new BackendAccessPolicyCatalog(BackendAccessMode.GRANT_REQUIRED, Map.of(), Map.of()),
+                directGrants,
+                resolver
+        );
+
+        assertEquals(
+                BackendAdmissionDecision.ALLOWED,
+                service.evaluate(BackendTarget.ungrouped("survival"), IDENTITY)
+        );
     }
 
     private static BackendAdmissionService service(BackendAccessMode d, Map<String, BackendAccessMode> g, Map<String, BackendAccessMode> s, AccessGrantLookup l) {
